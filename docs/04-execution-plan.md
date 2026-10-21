@@ -443,6 +443,7 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 - [x] Thiết kế hai điểm xuất phát `docs/05-starting-points.md`.
 - [x] Khung `playbooks/tech-lead-taste.md`.
 - [x] Khởi tạo git repo: github.com/ThangLuuQuoc/Proofline.
+- [x] Khung gói Python `proofline` (uv): CLI, đọc/kiểm tra config, chọn model theo vai trò, mức tự chủ hiệu lực, schema `state/proofline.db`, test và CI.
 - [ ] Chọn 1–2 repo đích; kiểm tra test suite và app khởi chạy được trong container.
 - [ ] Viết `proofline start` / `proofline assess` và đo mức sẵn sàng của repo đích.
 - [ ] Viết `proofline init` / `proofline doctor` / `proofline interview` và chạy shadow mode trên 3 issue.

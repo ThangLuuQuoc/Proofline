@@ -1,8 +1,8 @@
 # Proofline runtime
-.worktrees/
-state/
-logs/
-evals/reports/
+/.worktrees/
+/state/
+/logs/
+/evals/reports/
 
 # Secrets
 .env

@@ -38,7 +38,7 @@ Proofline/
 │   ├── 05-starting-points.md          # Hai điểm xuất phát & mức sẵn sàng R0–R4
 │   └── 06-the-outer-loop.md           # Outer Loop: khách hàng, team, telemetry production
 ├── config/
-│   └── proofline.yaml          # Repo đích, onboarding, mức sẵn sàng, sandbox, model, gate, taste, autonomy
+│   └── proofline.yaml                 # Repo đích, onboarding, mức sẵn sàng, sandbox, model, gate, taste, autonomy
 ├── playbooks/                         # Thư viện quy tắc, gu & kỹ năng
 │   ├── guardrails.md                  # Chốt an toàn (được thực thi thêm ở tầng hạ tầng)
 │   ├── tech-lead-taste.md             # Gu Tech Lead, cập nhật có kiểm chứng
@@ -48,9 +48,46 @@ Proofline/
 │   ├── golden-set/                    # Mỗi case: issue.md, case.yaml (source), hidden_tests/
 │   ├── decision-replay/               # PR lịch sử + quyết định thật của người
 │   └── reports/                       # Báo cáo baseline & so sánh
-└── src/                               # (dự kiến) start, assess, interview, init, eval_runner, worker, sandbox, verifier,
-                                       #           journey_runner, dispatcher, decision_log, autonomy
+├── src/proofline/                     # Mã nguồn
+│   ├── cli.py                         # Lệnh `proofline`
+│   ├── config.py                      # Đọc/kiểm tra config, chọn model theo vai trò
+│   ├── autonomy.py                    # Mức tự chủ hiệu lực (max, mức sẵn sàng, kill switch)
+│   ├── levels.py                      # Thang L0–L4 và R0–R4
+│   └── state/                         # SQLite state/proofline.db + schema.sql
+│                                      # (dự kiến) start, assess, interview, init, eval_runner, worker, sandbox,
+│                                      #           verifier, journey_runner, dispatcher, decision_log
+└── tests/
 ```
+
+---
+
+## Phát triển
+
+Cần [uv](https://docs.astral.sh/uv/) và Python ≥ 3.11.
+
+```bash
+uv sync
+```
+
+```bash
+uv run pytest -q
+```
+
+```bash
+uv run ruff check . && uv run ruff format --check .
+```
+
+Các lệnh đã có:
+
+| Lệnh | Việc làm |
+| :--- | :--- |
+| `proofline --version` | In phiên bản |
+| `proofline config check` | Kiểm tra `config/proofline.yaml` hợp lệ |
+| `proofline config model <vai_trò> [--repo <tên>]` | Model sẽ dùng cho vai trò (ưu tiên: `PROOFLINE_MODEL_<VAI_TRÒ>` → override theo repo → mặc định) |
+| `proofline autonomy show --readiness <R0–R4>` | Mức tự chủ hiệu lực của mọi loại quyết định |
+| `proofline db init [--path <file>]` | Tạo `state/proofline.db` và áp schema |
+
+Chạy lệnh trong môi trường dự án bằng `uv run proofline ...`.
 
 ---
 
