@@ -1,8 +1,12 @@
+# Workspace của người dùng không thuộc repo công cụ (tạo bằng `proofline workspace init` ở nơi khác)
+/proofline.yaml
+/targets/
+/evals/
+
 # Proofline runtime
 /.worktrees/
 /state/
 /logs/
-/evals/reports/
 
 # Secrets
 .env

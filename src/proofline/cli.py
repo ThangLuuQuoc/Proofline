@@ -15,21 +15,24 @@ from proofline.autonomy import effective_level
 from proofline.config import ConfigError, ProoflineConfig, load_config, resolve_model
 from proofline.levels import READINESS_LEVELS, ReadinessLevel
 from proofline.state import SchemaVersionError, init_db, table_names
+from proofline.workspace import WorkspaceExistsError, init_workspace
 
 app = typer.Typer(help="Proofline: xưởng phần mềm nơi mọi thay đổi đều có bằng chứng.")
 config_app = typer.Typer(help="Kiểm tra và tra cứu config.")
 autonomy_app = typer.Typer(help="Xem mức tự chủ hiệu lực.")
 db_app = typer.Typer(help="Quản lý state/proofline.db.")
+workspace_app = typer.Typer(help="Tạo workspace (config, state, playbook) tách khỏi công cụ.")
 app.add_typer(config_app, name="config")
 app.add_typer(autonomy_app, name="autonomy")
 app.add_typer(db_app, name="db")
+app.add_typer(workspace_app, name="workspace")
 
 ConfigOption = Annotated[
     Path | None,
     typer.Option(
         "--config",
         "-c",
-        help="Đường dẫn config (mặc định: $PROOFLINE_CONFIG hoặc config/proofline.yaml).",
+        help="File proofline.yaml (mặc định: $PROOFLINE_CONFIG hoặc ./proofline.yaml).",
     ),
 ]
 
@@ -70,6 +73,29 @@ def _load(config: Path | None) -> ProoflineConfig:
     except ConfigError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
+
+
+@workspace_app.command("init")
+def workspace_init(
+    path: Annotated[Path, typer.Argument(help="Thư mục workspace (tạo mới nếu chưa có).")] = Path(
+        "."
+    ),
+) -> None:
+    """Tạo workspace từ bản mẫu: proofline.yaml, playbooks/, state/, targets/, evals/."""
+    try:
+        result = init_workspace(path)
+    except WorkspaceExistsError as exc:
+        typer.secho(f"{exc}; không ghi đè workspace có sẵn.", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    typer.secho(f"Đã tạo workspace: {path.resolve()}", fg=typer.colors.GREEN)
+    for rel in result.created:
+        typer.echo(f"  + {rel}")
+    for rel in result.kept:
+        typer.echo(f"  = {rel} (đã có, giữ nguyên)")
+    typer.echo(
+        "\nTiếp theo: khai báo repo đích trong target_repos của proofline.yaml,"
+        " rồi chạy `proofline assess <tên repo>` trong thư mục workspace."
+    )
 
 
 @config_app.command("check")
@@ -128,7 +154,10 @@ def db_init(
     config: ConfigOption = None,
 ) -> None:
     """Tạo state/proofline.db và áp schema (gọi lại nhiều lần vẫn an toàn)."""
-    db_path = path if path is not None else Path(_load(config).factory.state_db)
+    if path is None:
+        cfg = _load(config)
+        path = cfg.workspace / cfg.factory.state_db
+    db_path = path
     try:
         conn = init_db(db_path)
     except SchemaVersionError as exc:
@@ -172,7 +201,7 @@ def assess_cmd(
     except ConfigError as exc:
         typer.secho(str(exc), fg=typer.colors.RED, err=True)
         raise typer.Exit(code=1) from exc
-    workspace = Path.cwd() / cfg.factory.workspace_root
+    workspace = cfg.workspace
     ctx = AssessContext(
         config=cfg,
         repo=target,

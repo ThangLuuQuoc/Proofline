@@ -2,7 +2,7 @@
 
 > Người dùng đến với Proofline từ một trong hai điểm: **một ý tưởng chưa có code**, hoặc **một repo đã có vài tính năng nhưng chưa nhiều test**. Cả hai đều thiếu thứ mà swarm cần để tự kiểm chứng (test, CI, lịch sử bug, lịch sử review). Tài liệu này mô tả cách hệ thống **đưa repo lên dần các mức sẵn sàng** trước, rồi mới cho swarm sửa và tự quyết nhiều hơn.
 >
-> Liên quan: [03-system-architecture.md](03-system-architecture.md) · [04-execution-plan.md](04-execution-plan.md) · [proofline.yaml](../config/proofline.yaml)
+> Liên quan: [03-system-architecture.md](03-system-architecture.md) · [04-execution-plan.md](04-execution-plan.md) · [proofline.yaml](../src/proofline/templates/proofline.yaml)
 
 ---
 
@@ -91,7 +91,7 @@ Hai luồng chỉ khác nhau ở **điểm vào**. Từ R1 trở đi, cả hai �
 **Không đụng vào file có sẵn của repo khi chuẩn hóa:**
 - Mọi file Proofline sinh ra nằm trong **thư mục artifacts**: mặc định `<repo>/.proofline/` (đi qua PR, cùng phiên bản với code); hoặc `<workspace>/targets/<tên repo>/` nếu khai báo `artifacts_location: workspace` cho team không muốn có file Proofline trong repo.
 - Tài liệu có sẵn của repo (vd `docs/FEATURES.md`) chỉ là **nguồn để đọc**, không bao giờ bị sửa hay ghi đè, kể cả khi trùng tên khác hoa thường trên Windows/macOS.
-- Kịch bản người dùng mới chỉ **thêm file mới** vào `journeys_dir`, chọn chỗ bộ chạy test của repo tìm thấy (vd tiniagent dùng Playwright đọc `./e2e` nên `journeys_dir: e2e/journeys`).
+- Kịch bản người dùng mới chỉ **thêm file mới** vào `journeys_dir`, chọn chỗ bộ chạy test của repo tìm thấy (vd repo dùng Playwright với `testDir: ./e2e` thì `journeys_dir: e2e/journeys`).
 - Mọi thay đổi trong repo đích đi qua nhánh `proofline/*` trong worktree riêng rồi mở PR; bản checkout người dùng đang làm việc không bị thay đổi.
 
 | Bước | Agent làm | Người làm | Đầu ra |

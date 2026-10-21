@@ -20,4 +20,4 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
-      - run: uv run proofline config check
+      - run: uv run proofline config check --config src/proofline/templates/proofline.yaml

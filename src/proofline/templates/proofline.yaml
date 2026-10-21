@@ -1,7 +1,9 @@
-# Proofline Configuration Settings
+# Proofline workspace config (proofline.yaml)
+# File này là MẪU đi kèm công cụ. `proofline workspace init <thư mục>` chép nó vào workspace của bạn;
+# mọi chỉnh sửa (repo đích, model, ngưỡng...) làm trên bản trong workspace, không sửa bản mẫu.
 version: "1.5"
 
-# Mọi đường dẫn bên dưới là tương đối so với thư mục gốc Proofline (workspace_root).
+# Mọi đường dẫn bên dưới là tương đối so với thư mục chứa file proofline.yaml này (workspace).
 factory:
   name: "Proofline Autonomous Engineering"
   workspace_root: "."
@@ -9,30 +11,27 @@ factory:
   log_dir: "logs"
   state_db: "state/proofline.db"
 
-# Repo đích mà swarm làm việc trên đó (khai báo theo từng repo).
-# `proofline init` tự dò các giá trị này từ CI/devcontainer/docker-compose, người xác nhận.
-target_repos:
-  - name: "tiniagent"                # Repo đích đầu tiên (Phase 0, luồng B): Next.js 15 + pnpm
-    local_path: "../tiniagent"       # Tương đối so với workspace_root; clone từ github.com/ThangLuuQuoc/tiniagent
-    default_branch: "feat/full-flow" # Nhánh mặc định hiện tại trên GitHub (origin/HEAD)
-    container_image: ""              # Chưa có Dockerfile/devcontainer cho app
-    commands:
-      install: "pnpm install --frozen-lockfile"
-      test: "pnpm test"
-      lint: "pnpm lint"
-      typecheck: "pnpm typecheck"
-    app_runtime:                     # Cách khởi chạy app trong sandbox cho User Journey gate
-      enabled: true                  # Bỏ trống/tắt → user_journey = not_applicable → không bao giờ tự merge
-      start_command: "pnpm dev"      # next dev -p 3200
-      seed_command: ""               # vd: "pnpm db:push" khi cần schema
-      healthcheck_url: "http://localhost:3200/"
-      startup_timeout_seconds: 180
-      base_url: ""
-      journey_tools: ["http", "cli", "browser"]
-    journeys_dir: "e2e/journeys"     # Kịch bản người dùng mới; Playwright của repo đọc ./e2e. Chỉ thêm file mới
-    artifacts_location: "repo"       # repo: file Proofline sinh ra nằm trong <repo>/.proofline/ (qua PR)
-                                     # workspace: nằm ngoài repo, trong <workspace>/targets/<tên repo>/
-    model_overrides: {}              # Đổi model theo vai trò cho riêng repo này, vd: { heavy_coding: "claude-opus-5-5" }
+# Repo đích mà Proofline làm việc trên đó (khai báo theo từng repo).
+# `proofline init` (sắp có) sẽ tự dò các giá trị này từ CI/devcontainer/docker-compose, người xác nhận.
+target_repos: []
+# Ví dụ một repo Node + pnpm:
+#  - name: "my-app"
+#    local_path: "../my-app"          # Tương đối so với workspace, hoặc đường dẫn tuyệt đối
+#    default_branch: "main"
+#    commands:
+#      install: "pnpm install --frozen-lockfile"
+#      test: "pnpm test"
+#      lint: "pnpm lint"
+#      typecheck: "pnpm typecheck"
+#    app_runtime:                     # Cách khởi chạy app cho User Journey gate
+#      enabled: true                  # Tắt → user_journey = not_applicable → không bao giờ tự merge
+#      start_command: "pnpm dev"
+#      seed_command: ""               # vd: "pnpm db:push" khi cần schema
+#      healthcheck_url: "http://localhost:3000/"
+#      startup_timeout_seconds: 180
+#    journeys_dir: "e2e/journeys"     # Nơi thêm kịch bản người dùng mới (chỗ bộ chạy test của repo tìm thấy)
+#    artifacts_location: "repo"       # repo: <repo>/.proofline/ (qua PR) | workspace: <workspace>/targets/<tên repo>/
+#    model_overrides: {}              # vd: { heavy_coding: "claude-opus-5-5" }
 
 # Điểm xuất phát (docs/05-starting-points.md)
 # Nguyên tắc: Proofline không sửa file có sẵn của repo đích. Mọi file Proofline sinh ra nằm trong

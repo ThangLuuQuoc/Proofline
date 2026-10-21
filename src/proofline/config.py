@@ -1,4 +1,7 @@
-"""Đọc và kiểm tra `config/proofline.yaml`, chọn model theo vai trò.
+"""Đọc và kiểm tra `proofline.yaml` của workspace, chọn model theo vai trò.
+
+Công cụ và workspace tách biệt: config, state, playbook, artifacts của người dùng nằm trong
+workspace (thư mục chứa `proofline.yaml`); repo công cụ chỉ chứa bản mẫu trong `templates/`.
 
 Chỉ các mục mà code đang dùng được khai báo kiểu chặt; các mục khác vẫn được giữ
 nguyên (extra="allow") để config có thể đi trước code.
@@ -13,11 +16,18 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    ValidationError,
+    model_validator,
+)
 
 from proofline.levels import AutonomyLevel, ReadinessLevel, autonomy_rank
 
-DEFAULT_CONFIG_PATH = Path("config/proofline.yaml")
+CONFIG_FILENAME = "proofline.yaml"
 CONFIG_PATH_ENV = "PROOFLINE_CONFIG"
 MODEL_ENV_PREFIX = "PROOFLINE_MODEL_"
 
@@ -138,6 +148,13 @@ class ProoflineConfig(_Section):
     models: ModelsConfig
     autonomy: AutonomyConfig
     readiness: ReadinessConfig = Field(default_factory=ReadinessConfig)
+    _source: Path | None = PrivateAttr(default=None)
+
+    @property
+    def workspace(self) -> Path:
+        """Thư mục workspace: tính theo vị trí file config, không theo thư mục đang đứng."""
+        base = self._source.parent if self._source is not None else Path.cwd()
+        return (base / self.factory.workspace_root).resolve()
 
     def extra_value(self, *keys: str, default: Any = None) -> Any:
         """Đọc một giá trị trong các mục chưa khai báo kiểu, vd ("evals", "golden_set_path")."""
@@ -166,9 +183,13 @@ class ProoflineConfig(_Section):
 
 
 def resolve_config_path(path: str | Path | None = None) -> Path:
+    """Thứ tự: --config > $PROOFLINE_CONFIG > ./proofline.yaml (đang đứng trong workspace)."""
     if path is not None:
         return Path(path)
-    return Path(os.environ.get(CONFIG_PATH_ENV, DEFAULT_CONFIG_PATH))
+    env_path = os.environ.get(CONFIG_PATH_ENV)
+    if env_path:
+        return Path(env_path)
+    return Path.cwd() / CONFIG_FILENAME
 
 
 def load_config(path: str | Path | None = None) -> ProoflineConfig:
@@ -176,15 +197,21 @@ def load_config(path: str | Path | None = None) -> ProoflineConfig:
     try:
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise ConfigError(f"không tìm thấy config: {config_path}") from exc
+        raise ConfigError(
+            f"không tìm thấy config: {config_path}\n"
+            "Tạo workspace bằng `proofline workspace init <thư mục>` rồi chạy lệnh"
+            f" trong thư mục đó, hoặc chỉ định --config / ${CONFIG_PATH_ENV}."
+        ) from exc
     except yaml.YAMLError as exc:
         raise ConfigError(f"YAML không hợp lệ trong {config_path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"config phải là một mapping: {config_path}")
     try:
-        return ProoflineConfig.model_validate(raw)
+        config = ProoflineConfig.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(f"config không hợp lệ ({config_path}):\n{exc}") from exc
+    config._source = config_path.resolve()
+    return config
 
 
 @dataclass(frozen=True)

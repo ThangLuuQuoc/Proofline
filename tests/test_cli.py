@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 
-from conftest import REPO_CONFIG
+from conftest import TEMPLATE_CONFIG
 from typer.testing import CliRunner
 
 from proofline import __version__
@@ -32,7 +32,7 @@ def test_version():
 
 
 def test_config_check_repo_config():
-    result = runner.invoke(app, ["config", "check", "--config", str(REPO_CONFIG)])
+    result = runner.invoke(app, ["config", "check", "--config", str(TEMPLATE_CONFIG)])
     assert result.exit_code == 0, result.output
     assert "Config hợp lệ" in result.output
 
@@ -45,7 +45,7 @@ def test_config_check_invalid(tmp_path):
 
 
 def test_config_model_default_and_env():
-    args = ["config", "model", "heavy_coding", "--config", str(REPO_CONFIG)]
+    args = ["config", "model", "heavy_coding", "--config", str(TEMPLATE_CONFIG)]
     result = runner.invoke(app, args, env={"PROOFLINE_MODEL_HEAVY_CODING": ""})
     assert result.exit_code == 0, result.output
     assert "claude-sonnet-5-5" in result.output and "default" in result.output
@@ -55,13 +55,13 @@ def test_config_model_default_and_env():
 
 
 def test_config_model_unknown_role():
-    result = runner.invoke(app, ["config", "model", "ghost", "--config", str(REPO_CONFIG)])
+    result = runner.invoke(app, ["config", "model", "ghost", "--config", str(TEMPLATE_CONFIG)])
     assert result.exit_code == 1
 
 
 def test_autonomy_show():
     result = runner.invoke(
-        app, ["autonomy", "show", "--readiness", "R2", "--config", str(REPO_CONFIG)]
+        app, ["autonomy", "show", "--readiness", "R2", "--config", str(TEMPLATE_CONFIG)]
     )
     assert result.exit_code == 0, result.output
     assert "customer_reply" in result.output
@@ -70,7 +70,7 @@ def test_autonomy_show():
 
 def test_autonomy_show_rejects_bad_readiness():
     result = runner.invoke(
-        app, ["autonomy", "show", "--readiness", "R9", "--config", str(REPO_CONFIG)]
+        app, ["autonomy", "show", "--readiness", "R9", "--config", str(TEMPLATE_CONFIG)]
     )
     assert result.exit_code == 1
 

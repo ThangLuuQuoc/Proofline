@@ -4,7 +4,7 @@
 >
 > **Outer Loop** (tài liệu này): nối Proofline với thế giới bên ngoài — khách hàng, team, production. Nó trả lời hai câu Inner Loop không trả lời được: *"nên làm gì?"* và *"làm xong có thật sự giải quyết vấn đề của người dùng không?"*.
 >
-> Liên quan: [03-system-architecture.md](03-system-architecture.md) · [04-execution-plan.md](04-execution-plan.md) (Phase 7) · [05-starting-points.md](05-starting-points.md) · [proofline.yaml](../config/proofline.yaml)
+> Liên quan: [03-system-architecture.md](03-system-architecture.md) · [04-execution-plan.md](04-execution-plan.md) (Phase 7) · [05-starting-points.md](05-starting-points.md) · [proofline.yaml](../src/proofline/templates/proofline.yaml)
 
 ---
 

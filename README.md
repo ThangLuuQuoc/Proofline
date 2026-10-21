@@ -37,20 +37,14 @@ Proofline/
 │   ├── 04-execution-plan.md           # Kế hoạch thực thi 8 giai đoạn (Phase 0–7)
 │   ├── 05-starting-points.md          # Hai điểm xuất phát & mức sẵn sàng R0–R4
 │   └── 06-the-outer-loop.md           # Outer Loop: khách hàng, team, telemetry production
-├── config/
-│   └── proofline.yaml                 # Repo đích, onboarding, mức sẵn sàng, sandbox, model, gate, taste, autonomy
-├── playbooks/                         # Thư viện quy tắc, gu & kỹ năng
-│   ├── guardrails.md                  # Chốt an toàn (được thực thi thêm ở tầng hạ tầng)
-│   ├── tech-lead-taste.md             # Gu Tech Lead, cập nhật có kiểm chứng
-│   └── skills/
-│       └── bug-fix-playbook.md        # Quy trình chuẩn xử lý bug
-├── evals/                             # (dự kiến, Phase 0)
-│   ├── golden-set/                    # Mỗi case: issue.md, case.yaml (source), hidden_tests/
-│   ├── decision-replay/               # PR lịch sử + quyết định thật của người
-│   └── reports/                       # Báo cáo baseline & so sánh
-├── src/proofline/                     # Mã nguồn
+├── src/proofline/                     # Mã nguồn công cụ
+│   ├── templates/                     # Bản mẫu chép vào workspace khi `proofline workspace init`
+│   │   ├── proofline.yaml             # Config mẫu: model, ngân sách, gate, taste, autonomy (chưa có repo đích)
+│   │   └── playbooks/                 # guardrails.md, tech-lead-taste.md, skills/bug-fix-playbook.md
 │   ├── cli.py                         # Lệnh `proofline`
 │   ├── config.py                      # Đọc/kiểm tra config, chọn model theo vai trò
+│   ├── workspace.py                   # Tạo workspace từ bản mẫu
+│   ├── assess.py, proc.py             # Đo mức sẵn sàng; chạy lệnh của repo đích
 │   ├── autonomy.py                    # Mức tự chủ hiệu lực (max, mức sẵn sàng, kill switch)
 │   ├── levels.py                      # Thang L0–L4 và R0–R4
 │   └── state/                         # SQLite state/proofline.db + schema.sql
@@ -58,6 +52,43 @@ Proofline/
 │                                      #           verifier, journey_runner, dispatcher, decision_log
 └── tests/
 ```
+
+---
+
+## Bắt đầu sử dụng
+
+Proofline là **công cụ độc lập** với repo bạn muốn tích hợp. Repo công cụ không chứa cấu hình của repo đích nào; mọi thứ của bạn nằm trong một **workspace** riêng:
+
+```
+proofline-workspace/                   # Thư mục bất kỳ, nên là repo git riêng (private) của bạn/team
+├── proofline.yaml                     # Config: repo đích, model, ngân sách, mức tự chủ...
+├── playbooks/                         # Guardrails, gu Tech Lead, skill: chỉnh và tự học ở đây
+├── evals/golden-set/<repo>/           # Golden Set theo từng repo đích
+├── evals/decision-replay/<repo>/
+├── targets/<repo>/                    # Artifacts khi artifacts_location: workspace
+├── state/proofline.db                 # Trạng thái chạy (không commit)
+└── logs/
+```
+
+1. Cài công cụ:
+
+```bash
+uv tool install git+https://github.com/ThangLuuQuoc/Proofline
+```
+
+2. Tạo workspace:
+
+```bash
+proofline workspace init ~/proofline-workspace
+```
+
+3. Khai báo repo đích trong `target_repos` của `proofline.yaml` (xem ví dụ ngay trong file), rồi trong thư mục workspace chạy:
+
+```bash
+proofline assess <tên repo>
+```
+
+Lệnh tìm config theo thứ tự: `--config` → biến `PROOFLINE_CONFIG` → `./proofline.yaml`. Mọi đường dẫn trong config tính theo thư mục chứa `proofline.yaml`, không theo thư mục đang đứng.
 
 ---
 
@@ -82,10 +113,11 @@ Các lệnh đã có:
 | Lệnh | Việc làm |
 | :--- | :--- |
 | `proofline --version` | In phiên bản |
-| `proofline config check` | Kiểm tra `config/proofline.yaml` hợp lệ |
+| `proofline workspace init [thư mục]` | Tạo workspace từ bản mẫu (không ghi đè file có sẵn) |
+| `proofline config check` | Kiểm tra `proofline.yaml` của workspace hợp lệ |
 | `proofline config model <vai_trò> [--repo <tên>]` | Model sẽ dùng cho vai trò (ưu tiên: `PROOFLINE_MODEL_<VAI_TRÒ>` → override theo repo → mặc định) |
 | `proofline autonomy show --readiness <R0–R4>` | Mức tự chủ hiệu lực của mọi loại quyết định |
-| `proofline db init [--path <file>]` | Tạo `state/proofline.db` và áp schema |
+| `proofline db init [--path <file>]` | Tạo `state/proofline.db` trong workspace và áp schema |
 | `proofline assess <repo> [--run] [--no-save]` | Đo mức sẵn sàng R0–R4 của repo đích, liệt kê việc cần làm để lên mức tiếp theo. Không có `--run` chỉ kiểm tra tĩnh; có `--run` sẽ build container, cài đặt, chạy test, khởi chạy app và hỏi trạng thái CI |
 
 Chạy lệnh trong môi trường dự án bằng `uv run proofline ...`.
@@ -159,6 +191,6 @@ flowchart TD
 * Lộ trình triển khai 8 giai đoạn: [04-execution-plan.md](docs/04-execution-plan.md)
 * Hai điểm xuất phát & mức sẵn sàng: [05-starting-points.md](docs/05-starting-points.md)
 * Outer Loop: [06-the-outer-loop.md](docs/06-the-outer-loop.md)
-* Cấu hình: [proofline.yaml](config/proofline.yaml)
-* Chốt an toàn: [guardrails.md](playbooks/guardrails.md)
-* Gu Tech Lead: [tech-lead-taste.md](playbooks/tech-lead-taste.md)
+* Config mẫu: [proofline.yaml](src/proofline/templates/proofline.yaml)
+* Chốt an toàn (mẫu): [guardrails.md](src/proofline/templates/playbooks/guardrails.md)
+* Gu Tech Lead (mẫu): [tech-lead-taste.md](src/proofline/templates/playbooks/tech-lead-taste.md)

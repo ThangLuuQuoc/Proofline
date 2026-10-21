@@ -3,18 +3,42 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from conftest import REPO_CONFIG
+from conftest import TEMPLATE_CONFIG
 
 from proofline.config import ConfigError, ProoflineConfig, load_config, resolve_model
 
 
-def test_repo_config_is_valid():
-    cfg = load_config(REPO_CONFIG)
+def test_template_config_is_valid():
+    cfg = load_config(TEMPLATE_CONFIG)
     assert {"triage", "fast_probe", "heavy_coding", "senior_reviewer", "lead_agent"} <= set(
         cfg.models.roles
     )
     assert cfg.autonomy.decisions["customer_reply"].max == "L1"
     assert not {"main", "master"} & set(cfg.autonomy.auto_merge.target_branches)
+    # Bản mẫu đi kèm công cụ không được chứa repo đích cụ thể của ai.
+    assert cfg.target_repos == []
+
+
+def test_workspace_is_relative_to_config_file(config_dict, write_config, tmp_path, monkeypatch):
+    path = write_config(config_dict)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    assert load_config(path).workspace == path.parent.resolve()
+
+
+def test_default_config_is_proofline_yaml_in_cwd(config_dict, write_config, monkeypatch):
+    path = write_config(config_dict)
+    monkeypatch.delenv("PROOFLINE_CONFIG", raising=False)
+    monkeypatch.chdir(path.parent)
+    assert load_config().version == "test"
+
+
+def test_missing_config_hints_workspace_init(tmp_path, monkeypatch):
+    monkeypatch.delenv("PROOFLINE_CONFIG", raising=False)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ConfigError, match="proofline workspace init"):
+        load_config()
 
 
 def test_unknown_sections_are_kept(config_dict):

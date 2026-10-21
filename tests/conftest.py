@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 import yaml
 
-REPO_CONFIG = Path(__file__).resolve().parents[1] / "config" / "proofline.yaml"
+TEMPLATE_CONFIG = (
+    Path(__file__).resolve().parents[1] / "src" / "proofline" / "templates" / "proofline.yaml"
+)
 
 MINIMAL_CONFIG: dict[str, Any] = {
     "version": "test",

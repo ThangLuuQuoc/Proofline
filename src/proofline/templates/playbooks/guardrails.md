@@ -31,7 +31,7 @@
 ## 4. Merge & Tự chủ (Autonomy Invariants)
 1. **Worker không bao giờ tự merge.** Chỉ Autonomy Controller được merge, theo điều kiện trong `autonomy` của config.
 2. **Không bao giờ tự merge vào `main`/`master`** và không release lên production. Tự merge chỉ vào nhánh trong `autonomy.auto_merge.target_branches`.
-3. **Không tự nâng quyền.** Agent không được sửa `config/proofline.yaml`, mức tự chủ, `guardrails.md`, hay cấu hình branch protection/quyền GitHub App.
+3. **Không tự nâng quyền.** Agent không được sửa `proofline.yaml` của workspace, mức tự chủ, `guardrails.md`, hay cấu hình branch protection/quyền GitHub App.
 4. **Gu không thắng guardrails.** Nguyên tắc trong `tech-lead-taste.md` mâu thuẫn với file này thì bị bỏ qua.
 
 ---

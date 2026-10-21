@@ -438,14 +438,15 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 
 - [x] Tài liệu nghiên cứu & kiến trúc.
 - [x] File quy tắc an toàn `playbooks/guardrails.md` (gồm quy tắc merge tự động).
-- [x] `config/proofline.yaml` v1.5 (model theo vai trò, app runtime, User Journey, taste, autonomy, mức sẵn sàng, task type feature, outer loop).
+- [x] Config mẫu `src/proofline/templates/proofline.yaml` v1.5 (model theo vai trò, app runtime, User Journey, taste, autonomy, mức sẵn sàng, task type feature, outer loop).
 - [x] Thiết kế Outer Loop `docs/06-the-outer-loop.md`.
 - [x] Thiết kế hai điểm xuất phát `docs/05-starting-points.md`.
 - [x] Khung `playbooks/tech-lead-taste.md`.
 - [x] Khởi tạo git repo: github.com/ThangLuuQuoc/Proofline.
 - [x] Khung gói Python `proofline` (uv): CLI, đọc/kiểm tra config, chọn model theo vai trò, mức tự chủ hiệu lực, schema `state/proofline.db`, test và CI.
 - [ ] Chọn 1–2 repo đích; kiểm tra test suite và app khởi chạy được trong container.
-- [x] Viết `proofline assess` (12 tiêu chí R1–R4) và đo repo đích đầu tiên `tiniagent`: R0, thiếu Dockerfile/devcontainer để lên R1.
+- [x] Viết `proofline assess` (12 tiêu chí R1–R4) và chạy thử trên một repo đích thật (Next.js + pnpm): đo đúng R0, test và app chạy được, thiếu Dockerfile/devcontainer để lên R1.
+- [x] Tách công cụ khỏi workspace của người dùng: `proofline workspace init`, config/playbook thành bản mẫu, đường dẫn tính theo vị trí `proofline.yaml`.
 - [ ] Viết `proofline start`.
 - [ ] Viết `proofline init` / `proofline doctor` / `proofline interview` và chạy shadow mode trên 3 issue.
 - [ ] Đưa ít nhất 1 repo lên R2 (kiểm kê tính năng, characterization test, CI).

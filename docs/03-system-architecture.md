@@ -1,6 +1,6 @@
 # Thiết kế kiến trúc kỹ thuật Proofline v1.5
 
-> Tài liệu mô tả kiến trúc tầng, các khối thành phần, luồng dữ liệu, cơ chế phân tầng mô hình, kiểm chứng như người dùng thật, học "gu" Tech Lead, mức sẵn sàng của repo, bậc thang tự chủ và Outer Loop của hệ thống **Proofline**. Cấu hình tương ứng: [proofline.yaml](../config/proofline.yaml). Lộ trình triển khai: [04-execution-plan.md](04-execution-plan.md). Hai điểm xuất phát: [05-starting-points.md](05-starting-points.md). Outer Loop: [06-the-outer-loop.md](06-the-outer-loop.md).
+> Tài liệu mô tả kiến trúc tầng, các khối thành phần, luồng dữ liệu, cơ chế phân tầng mô hình, kiểm chứng như người dùng thật, học "gu" Tech Lead, mức sẵn sàng của repo, bậc thang tự chủ và Outer Loop của hệ thống **Proofline**. Cấu hình tương ứng: [proofline.yaml](../src/proofline/templates/proofline.yaml). Lộ trình triển khai: [04-execution-plan.md](04-execution-plan.md). Hai điểm xuất phát: [05-starting-points.md](05-starting-points.md). Outer Loop: [06-the-outer-loop.md](06-the-outer-loop.md).
 
 ---
 
