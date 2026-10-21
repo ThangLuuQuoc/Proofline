@@ -12,7 +12,8 @@ factory:
   state_db: "state/proofline.db"
 
 # Repo đích mà Proofline làm việc trên đó (khai báo theo từng repo).
-# `proofline init` (sắp có) sẽ tự dò các giá trị này từ CI/devcontainer/docker-compose, người xác nhận.
+# Cách nhanh nhất: `proofline target add <git-url | đường dẫn>` tự clone, tự dò cấu hình và ghi vào
+# targets/<tên>/target.yaml (mỗi repo một file, không sửa file này). Cũng có thể khai báo thẳng dưới đây.
 target_repos: []
 # Ví dụ một repo Node + pnpm:
 #  - name: "my-app"

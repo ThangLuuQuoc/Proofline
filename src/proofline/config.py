@@ -59,6 +59,7 @@ class AppRuntime(_Section):
 
 ARTIFACTS_DIRNAME = ".proofline"
 WORKSPACE_TARGETS_DIR = "targets"
+TARGET_FILENAME = "target.yaml"
 
 
 class TargetRepo(_Section):
@@ -167,6 +168,10 @@ class ProoflineConfig(_Section):
 
     @model_validator(mode="after")
     def _overrides_use_known_roles(self) -> ProoflineConfig:
+        names = [repo.name for repo in self.target_repos]
+        duplicates = sorted({name for name in names if names.count(name) > 1})
+        if duplicates:
+            raise ValueError(f"repo đích bị khai báo trùng tên: {duplicates}")
         for repo in self.target_repos:
             unknown = set(repo.model_overrides) - set(self.models.roles)
             if unknown:
@@ -206,12 +211,33 @@ def load_config(path: str | Path | None = None) -> ProoflineConfig:
         raise ConfigError(f"YAML không hợp lệ trong {config_path}: {exc}") from exc
     if not isinstance(raw, dict):
         raise ConfigError(f"config phải là một mapping: {config_path}")
+    raw["target_repos"] = list(raw.get("target_repos") or []) + _load_target_files(config_path, raw)
     try:
         config = ProoflineConfig.model_validate(raw)
     except ValidationError as exc:
         raise ConfigError(f"config không hợp lệ ({config_path}):\n{exc}") from exc
     config._source = config_path.resolve()
     return config
+
+
+def targets_dir(workspace: Path) -> Path:
+    return workspace / WORKSPACE_TARGETS_DIR
+
+
+def _load_target_files(config_path: Path, raw: dict[str, Any]) -> list[dict[str, Any]]:
+    """Repo đích thêm bằng `proofline target add`: mỗi repo một file targets/<tên>/target.yaml."""
+    factory = raw.get("factory") if isinstance(raw.get("factory"), dict) else {}
+    workspace = config_path.parent / factory.get("workspace_root", ".")
+    entries = []
+    for target_file in sorted(targets_dir(workspace).glob(f"*/{TARGET_FILENAME}")):
+        try:
+            data = yaml.safe_load(target_file.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            raise ConfigError(f"YAML không hợp lệ trong {target_file}: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ConfigError(f"{target_file} phải là một mapping")
+        entries.append(data)
+    return entries
 
 
 @dataclass(frozen=True)

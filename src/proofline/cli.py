@@ -12,9 +12,16 @@ import typer
 from proofline import __version__
 from proofline.assess import AssessContext, Assessment, assess, save_snapshot
 from proofline.autonomy import effective_level
-from proofline.config import ConfigError, ProoflineConfig, load_config, resolve_model
+from proofline.config import (
+    CONFIG_FILENAME,
+    ConfigError,
+    ProoflineConfig,
+    load_config,
+    resolve_model,
+)
 from proofline.levels import READINESS_LEVELS, ReadinessLevel
 from proofline.state import SchemaVersionError, init_db, table_names
+from proofline.targets import AddedTarget, add_target, is_git_url
 from proofline.workspace import WorkspaceExistsError, init_workspace
 
 app = typer.Typer(help="Proofline: xưởng phần mềm nơi mọi thay đổi đều có bằng chứng.")
@@ -22,6 +29,8 @@ config_app = typer.Typer(help="Kiểm tra và tra cứu config.")
 autonomy_app = typer.Typer(help="Xem mức tự chủ hiệu lực.")
 db_app = typer.Typer(help="Quản lý state/proofline.db.")
 workspace_app = typer.Typer(help="Tạo workspace (config, state, playbook) tách khỏi công cụ.")
+target_app = typer.Typer(help="Thêm và xem repo đích.")
+app.add_typer(target_app, name="target")
 app.add_typer(config_app, name="config")
 app.add_typer(autonomy_app, name="autonomy")
 app.add_typer(db_app, name="db")
@@ -195,7 +204,10 @@ def assess_cmd(
     config: ConfigOption = None,
 ) -> None:
     """Đo mức sẵn sàng R0–R4 của repo đích và việc cần làm để lên mức tiếp theo."""
-    cfg = _load(config)
+    _run_assess(_load(config), repo, run=run, save=save)
+
+
+def _run_assess(cfg: ProoflineConfig, repo: str, *, run: bool, save: bool) -> None:
     try:
         target = cfg.target_repo(repo)
     except ConfigError as exc:
@@ -235,3 +247,84 @@ def _print_assessment(result: Assessment) -> None:
         typer.secho(f"\nĐể lên {target}:", bold=True)
         for c in missing:
             typer.echo(f"  - {c.action or c.detail}")
+
+
+NameOption = Annotated[
+    str | None, typer.Option("--name", help="Tên repo đích (mặc định: lấy từ URL/thư mục).")
+]
+BranchOption = Annotated[
+    str | None, typer.Option("--branch", help="Nhánh chính (mặc định: nhánh mặc định của repo).")
+]
+SourceArgument = Annotated[str, typer.Argument(help="Git URL (https/ssh) hoặc đường dẫn repo.")]
+
+
+def _add(cfg: ProoflineConfig, source: str, name: str | None, branch: str | None) -> AddedTarget:
+    if is_git_url(source):
+        typer.echo(f"Đang clone {source} ...")
+    try:
+        added = add_target(cfg, source, name=name, branch=branch)
+    except ConfigError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    det = added.detection
+    typer.secho(f"Đã thêm repo đích '{added.name}' ({det.stack})", fg=typer.colors.GREEN)
+    typer.echo(f"  Repo:   {added.repo_path}{' (đã clone)' if added.cloned else ''}")
+    typer.echo(f"  Config: {added.target_file}")
+    for key, value in det.commands.items():
+        typer.echo(f"  {key}: {value}")
+    if det.app_runtime.get("enabled"):
+        runtime = det.app_runtime
+        typer.echo(f"  app: {runtime['start_command']} → {runtime['healthcheck_url']}")
+    for note in det.notes:
+        typer.secho(f"  Lưu ý: {note}", fg=typer.colors.YELLOW)
+    typer.echo("Hãy kiểm tra file config trên trước khi chạy `proofline assess --run`.")
+    return added
+
+
+@target_app.command("add")
+def target_add(
+    source: SourceArgument,
+    name: NameOption = None,
+    branch: BranchOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Thêm repo đích: clone nếu là URL, tự dò stack và lệnh, ghi targets/<tên>/target.yaml."""
+    _add(_load(config), source, name, branch)
+
+
+@target_app.command("list")
+def target_list(config: ConfigOption = None) -> None:
+    """Liệt kê repo đích trong workspace."""
+    cfg = _load(config)
+    if not cfg.target_repos:
+        typer.echo("Chưa có repo đích. Thêm bằng `proofline target add <git-url>`.")
+        return
+    for repo in cfg.target_repos:
+        path = (cfg.workspace / repo.local_path).resolve()
+        typer.echo(f"{repo.name}  {path}  (nhánh {repo.default_branch})")
+
+
+@app.command("start")
+def start(
+    source: SourceArgument,
+    workspace: Annotated[
+        Path, typer.Option("--workspace", "-w", help="Thư mục workspace (tạo nếu chưa có).")
+    ] = Path("."),
+    name: NameOption = None,
+    branch: BranchOption = None,
+    run: Annotated[
+        bool, typer.Option("--run", help="Chạy luôn assess đầy đủ (cài đặt, test, khởi chạy app).")
+    ] = False,
+) -> None:
+    """Bắt đầu nhanh: tạo workspace nếu cần, thêm repo đích từ git URL, rồi đo mức sẵn sàng."""
+    config_path = workspace / CONFIG_FILENAME
+    if not config_path.exists():
+        init_workspace(workspace)
+        typer.secho(f"Đã tạo workspace: {workspace.resolve()}", fg=typer.colors.GREEN)
+    added = _add(_load(config_path), source, name, branch)
+    typer.echo("")
+    _run_assess(_load(config_path), added.name, run=run, save=True)
+    typer.echo(
+        f"\nLần sau, chạy các lệnh trong {workspace.resolve()}"
+        f" (vd `proofline assess {added.name} --run`)."
+    )

@@ -128,7 +128,7 @@ graph TD
 
 * Mức sẵn sàng **có thể giảm** (CI đỏ quá 24 giờ, app không còn khởi chạy được); khi đó Autonomy Controller hạ ngay các quyết định vượt trần.
 * **Luồng A:** `proofline interview` (sản phẩm + gu) → spec với acceptance journey (**người duyệt**) → ADR (**người chọn**) → walking skeleton do một worker dựng (→ R1) → cắt backlog `type:feature`.
-* **Luồng B:** `proofline assess` + `proofline init`/`doctor` → `proofline interview` (gu) → kiểm kê tính năng ngược thành `.proofline/features.md` (**người xác nhận**; tài liệu có sẵn của repo chỉ là nguồn đọc) → characterization test, kịch bản người dùng, CI (→ R2) → Golden Set (→ R3).
+* **Luồng B:** `proofline start <git-url>` (tạo workspace, clone, tự dò cấu hình, `assess`) + `proofline doctor` → `proofline interview` (gu) → kiểm kê tính năng ngược thành `.proofline/features.md` (**người xác nhận**; tài liệu có sẵn của repo chỉ là nguồn đọc) → characterization test, kịch bản người dùng, CI (→ R2) → Golden Set (→ R3).
 * **Shadow mode** (cả hai luồng, khi đã có code): worker làm trong sandbox, không mở PR, gửi báo cáo buổi sáng.
 * Chi tiết đầy đủ ở [05-starting-points.md](05-starting-points.md).
 

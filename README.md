@@ -65,10 +65,13 @@ proofline-workspace/                   # Thư mục bất kỳ, nên là repo gi
 ├── playbooks/                         # Guardrails, gu Tech Lead, skill: chỉnh và tự học ở đây
 ├── evals/golden-set/<repo>/           # Golden Set theo từng repo đích
 ├── evals/decision-replay/<repo>/
-├── targets/<repo>/                    # Artifacts khi artifacts_location: workspace
+├── repos/<repo>/                      # Bản clone của repo đích (không commit)
+├── targets/<repo>/target.yaml         # Cấu hình từng repo đích (tự dò khi thêm) + artifacts nếu chọn workspace
 ├── state/proofline.db                 # Trạng thái chạy (không commit)
 └── logs/
 ```
+
+**Bắt đầu nhanh (2 lệnh):**
 
 1. Cài công cụ:
 
@@ -76,17 +79,28 @@ proofline-workspace/                   # Thư mục bất kỳ, nên là repo gi
 uv tool install git+https://github.com/ThangLuuQuoc/Proofline
 ```
 
-2. Tạo workspace:
+2. Tạo workspace, clone repo, tự dò cấu hình và đo mức sẵn sàng trong một lệnh:
 
 ```bash
-proofline workspace init ~/proofline-workspace
+proofline start https://github.com/<owner>/<repo> --workspace ~/proofline-workspace
 ```
 
-3. Khai báo repo đích trong `target_repos` của `proofline.yaml` (xem ví dụ ngay trong file), rồi trong thư mục workspace chạy:
+`proofline start` tạo workspace nếu chưa có, clone repo vào `repos/<tên>/`, tự dò stack và lệnh (Node: npm/pnpm/yarn/bun, cổng dev server, thư mục Playwright; Python: uv/poetry/pip, pytest, ruff, mypy; Go; Rust), ghi `targets/<tên>/target.yaml` rồi chạy `assess` kiểm tra tĩnh. Hãy mở `target.yaml` kiểm tra trước khi chạy đầy đủ:
 
 ```bash
-proofline assess <tên repo>
+proofline assess <tên repo> --run
 ```
+
+**Từng bước** (khi đã có workspace, chạy trong thư mục workspace):
+
+| Lệnh | Việc làm |
+| :--- | :--- |
+| `proofline workspace init <thư mục>` | Tạo workspace trống từ bản mẫu |
+| `proofline target add <git-url \| đường dẫn> [--name] [--branch]` | Thêm repo đích: clone nếu là URL, dùng tại chỗ nếu là thư mục có sẵn; tự dò cấu hình |
+| `proofline target list` | Liệt kê repo đích |
+| `proofline assess <tên repo> [--run]` | Đo mức sẵn sàng |
+
+Repo đích cũng có thể khai báo thẳng trong `target_repos` của `proofline.yaml`; tên không được trùng với repo trong `targets/`.
 
 Lệnh tìm config theo thứ tự: `--config` → biến `PROOFLINE_CONFIG` → `./proofline.yaml`. Mọi đường dẫn trong config tính theo thư mục chứa `proofline.yaml`, không theo thư mục đang đứng.
 
@@ -113,7 +127,9 @@ Các lệnh đã có:
 | Lệnh | Việc làm |
 | :--- | :--- |
 | `proofline --version` | In phiên bản |
+| `proofline start <git-url \| đường dẫn> [--workspace] [--run]` | Bắt đầu nhanh: tạo workspace nếu cần, thêm repo đích, đo mức sẵn sàng |
 | `proofline workspace init [thư mục]` | Tạo workspace từ bản mẫu (không ghi đè file có sẵn) |
+| `proofline target add <git-url \| đường dẫn>` / `proofline target list` | Thêm repo đích (clone + tự dò cấu hình) / liệt kê |
 | `proofline config check` | Kiểm tra `proofline.yaml` của workspace hợp lệ |
 | `proofline config model <vai_trò> [--repo <tên>]` | Model sẽ dùng cho vai trò (ưu tiên: `PROOFLINE_MODEL_<VAI_TRÒ>` → override theo repo → mặc định) |
 | `proofline autonomy show --readiness <R0–R4>` | Mức tự chủ hiệu lực của mọi loại quyết định |

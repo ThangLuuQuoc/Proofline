@@ -53,10 +53,11 @@ Hai luồng chỉ khác nhau ở **điểm vào**. Từ R1 trở đi, cả hai �
 
 | Lệnh | Việc làm | Dùng ở |
 | :--- | :--- | :--- |
-| `proofline start` | Một cửa vào: tự nhận biết repo trống / chỉ có tài liệu ý tưởng hay đã có code, rồi đi vào luồng A hoặc B | Lần đầu |
+| `proofline start <git-url \| đường dẫn>` | Một cửa vào: tạo workspace nếu cần, thêm repo đích (clone + tự dò cấu hình), đo mức sẵn sàng. *(Đã có cho luồng B; nhận biết repo trống để vào luồng A: sắp có)* | Lần đầu |
+| `proofline target add <git-url \| đường dẫn>` | Clone repo vào `repos/<tên>/` (hoặc dùng thư mục có sẵn), tự dò stack/lệnh/`app_runtime`/`journeys_dir`, ghi `targets/<tên>/target.yaml` | Thêm repo đích |
 | `proofline assess` | Đo mức sẵn sàng R0–R4, liệt kê tiêu chí còn thiếu và việc cần làm để lên mức tiếp theo | Lần đầu, sau đó mỗi đêm |
 | `proofline interview` | Phỏng vấn sản phẩm (chỉ luồng A) và gu (cả hai luồng) | Lần đầu, chạy lại khi muốn chỉnh gu |
-| `proofline init` / `proofline doctor` | Dò và kiểm tra lệnh test/lint, `app_runtime`, container, GitHub App, branch protection | Luồng B; luồng A sau walking skeleton |
+| `proofline doctor` | Kiểm tra container, GitHub App, branch protection (việc dò lệnh đã nằm trong `target add`) | Luồng B; luồng A sau walking skeleton |
 | `proofline golden mine` | Đào case Golden Set từ lịch sử bug thật | Khi repo có lịch sử |
 | `proofline golden synth` | Sinh case Golden Set synthetic bằng cách cấy lỗi | Khi lịch sử bug quá ít |
 | `proofline taste mine` | Đọc lịch sử review PR để đề xuất nguyên tắc gu | Khi repo có lịch sử review |
@@ -96,7 +97,7 @@ Hai luồng chỉ khác nhau ở **điểm vào**. Từ R1 trở đi, cả hai �
 
 | Bước | Agent làm | Người làm | Đầu ra |
 | :--- | :--- | :--- | :--- |
-| 1. Đánh giá | `proofline assess`: độ phủ test, CI, app có chạy trong sandbox không, tài liệu; `proofline init`/`doctor` dò cấu hình | Xác nhận cấu hình dò được | Báo cáo mức sẵn sàng + danh sách việc để lên mức |
+| 1. Đánh giá | `proofline assess`: độ phủ test, CI, app có chạy trong sandbox không, tài liệu; `proofline target add` dò cấu hình, `proofline doctor` kiểm tra môi trường | Xác nhận cấu hình dò được | Báo cáo mức sẵn sàng + danh sách việc để lên mức |
 | 2. Phỏng vấn gu | Phỏng vấn gu (mục 6); rút thêm quy ước từ code hiện có và `proofline taste mine` nếu có lịch sử review | Trả lời | Bản nháp `tech-lead-taste.md` |
 | 3. Kiểm kê tính năng ngược | Đọc code, liệt kê tính năng hiện có và hành vi quan sát được | **Xác nhận / sửa danh sách** | `.proofline/features.md` (tài liệu tính năng có sẵn chỉ là nguồn đọc) |
 | 4. Khóa hành vi | Viết **characterization test** (ghi lại hành vi hiện tại) và kịch bản người dùng cho từng tính năng; dựng CI, devcontainer, `app_runtime` | Review PR | Repo lên **R2** |
@@ -203,7 +204,7 @@ Khi repo tụt mức sẵn sàng, Autonomy Controller hạ ngay các quyết đ�
 
 ## 10. Thứ tự xây dựng
 
-1. **Luồng B trước** (Phase 0–3): `proofline assess`, `proofline init`/`doctor`, phỏng vấn gu, kiểm kê tính năng, characterization test, `proofline golden mine`/`synth`. Luồng này dùng lại gần như toàn bộ verifier và cho kết quả đo được rõ ràng.
+1. **Luồng B trước** (Phase 0–3): `proofline start`/`target add`/`assess`, `proofline doctor`, phỏng vấn gu, kiểm kê tính năng, characterization test, `proofline golden mine`/`synth`. Luồng này dùng lại gần như toàn bộ verifier và cho kết quả đo được rõ ràng.
 2. **Task type `feature` + Acceptance Journey gate** cùng Verification Engine (Phase 2), vì cần cho cả hai luồng.
 3. **Luồng A** (Phase 4, cùng Lead Agent): phỏng vấn sản phẩm, spec, ADR, walking skeleton, cắt backlog. Luồng này cần Lead Agent và phần lớn quyết định vẫn do người, nên xây sau khi luồng B đã chạy ổn.
 

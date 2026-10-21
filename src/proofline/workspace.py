@@ -18,6 +18,7 @@ GITIGNORE = """# Dữ liệu chạy của Proofline (không commit)
 state/
 logs/
 .worktrees/
+repos/
 .env
 """
 
