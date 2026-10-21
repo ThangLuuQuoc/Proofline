@@ -61,7 +61,7 @@ Người dùng chỉ cần chạy `proofline start`. Hệ thống tự nhận bi
 | Thời điểm | Người dùng làm | Hệ thống làm |
 | :--- | :--- | :--- |
 | **Ngày 1 (khoảng 1 giờ)** | Chạy `proofline start`, cài GitHub App, trả lời phỏng vấn gu | `proofline assess` + `proofline init`/`doctor`: dò lệnh test/lint, `app_runtime`, dựng container; báo cáo mức sẵn sàng và việc cần làm. **Shadow mode** trên 3 issue |
-| **Tuần 1** | **Xác nhận danh sách tính năng** | Kiểm kê tính năng ngược thành `docs/features.md`; viết characterization test và kịch bản người dùng, dựng CI (→ R2) |
+| **Tuần 1** | **Xác nhận danh sách tính năng** | Kiểm kê tính năng ngược thành `.proofline/features.md` (tài liệu gốc chỉ là nguồn đọc); viết characterization test và kịch bản người dùng, dựng CI (→ R2) |
 | **Tuần 2** | Chọn case Golden Set | `proofline golden mine` nếu đủ bug lịch sử, không thì `proofline golden synth` (→ R3 khi có baseline) |
 | **Tuần 3 trở đi** | Review PR, bấm duyệt/từ chối kèm lý do, `/proofline teach` | PR draft cho bug/feature; ghi mọi quyết định để học và tính quyền tự chủ |
 
@@ -123,7 +123,7 @@ flowchart LR
   2. **`proofline init` + `proofline doctor`:** dò lệnh test/lint/typecheck từ CI, dò cách khởi chạy app và healthcheck (`app_runtime`), dựng container; người xác nhận rồi ghi vào `target_repos` trong config.
   3. **`proofline interview` (phần gu):** phỏng vấn 10–15 câu để bootstrap `tech-lead-taste.md` (nguồn `interview`); kết hợp `proofline taste mine` nếu repo có lịch sử review.
   4. **Shadow mode:** chạy worker trên 3–5 issue thật trong sandbox, không mở PR, gửi báo cáo buổi sáng.
-  5. **Kiểm kê tính năng & khóa hành vi** (với repo chưa đạt R2): agent viết `docs/features.md` từ code, người xác nhận; viết characterization test và kịch bản người dùng cho từng tính năng; dựng CI. Hành vi có vẻ sai được ghi thành đề xuất issue, không sửa.
+  5. **Kiểm kê tính năng & khóa hành vi** (với repo chưa đạt R2): agent viết `.proofline/features.md` từ code và tài liệu có sẵn (không sửa tài liệu gốc), người xác nhận; viết characterization test và kịch bản người dùng cho từng tính năng; dựng CI. Hành vi có vẻ sai được ghi thành đề xuất issue, không sửa.
   6. Chọn **1–2 repo đích** để đo baseline. Ưu tiên repo đã đạt R2 (hoặc đưa lên R2 bằng bước 5).
   7. **Golden Set từ ba nguồn** (`history` / `synthetic` / `accumulated`, chi tiết ở [05-starting-points.md](05-starting-points.md) mục 8):
      - **`proofline golden synth`** khi lịch sử bug quá ít: cấy lỗi vào hàm có test bao phủ, kiểm tra fail ổn định, viết `issue.md` từ triệu chứng người dùng thấy. Tỷ lệ synthetic tối đa 70%.
@@ -221,7 +221,7 @@ flowchart LR
 * **Tiêu chuẩn nghiệm thu:**
   - Người dùng mới đi từ `proofline start` đến báo cáo mức sẵn sàng và báo cáo shadow đầu tiên trong **≤ 1 giờ thao tác**.
   - `proofline assess` cho cùng kết quả khi chạy lại trên cùng commit.
-  - Ít nhất 1 repo đạt R2, có `docs/features.md` đã được người xác nhận.
+  - Ít nhất 1 repo đạt R2, có `.proofline/features.md` đã được người xác nhận.
   - Có báo cáo baseline tái lập được bằng 1 lệnh.
   - Ngưỡng ngân sách trong `proofline.yaml` được đặt lại theo **p90 chi phí thực tế** đo được.
 
@@ -253,7 +253,7 @@ flowchart LR
   4. **Regression gate:** toàn bộ test suite pass; so sánh với kết quả trên `base_commit` để loại test vốn đã đỏ/chập chờn.
   5. **Static gate:** số cảnh báo lint/typecheck **không tăng** so với base.
   6. **User Journey gate** (`src/journey_runner.py`):
-     - Agent viết **kịch bản người dùng** trong `tests/journeys/` của repo đích, mô tả mục tiêu người dùng trong issue: gọi API end-to-end (HTTP), chạy lệnh CLI, hoặc thao tác giao diện (Playwright: bấm nút, điền form, đọc kết quả).
+     - Agent viết **kịch bản người dùng** trong `journeys_dir` của repo đích (mặc định `tests/journeys/`, chỉ thêm file mới), mô tả mục tiêu người dùng trong issue: gọi API end-to-end (HTTP), chạy lệnh CLI, hoặc thao tác giao diện (Playwright: bấm nút, điền form, đọc kết quả).
      - Harness tự khởi chạy app trong sandbox theo `app_runtime` (seed data, chờ healthcheck), rồi chạy kịch bản **trên `base_commit` → phải FAIL ở bước khẳng định mục tiêu**, và **trên code đã sửa → phải PASS**. Đây là nguyên tắc repro áp dụng cho luồng người dùng: kịch bản không fail trên bản lỗi thì không chứng minh được gì.
      - Trong lúc chạy, harness bắt thêm: lỗi console trình duyệt, response 5xx, exception trong log app, và thời gian phản hồi so với base (cảnh báo khi chậm hơn ngưỡng cấu hình).
      - Thu evidence: transcript HTTP, ảnh chụp/video trước-sau, log. Đính kèm vào PR.

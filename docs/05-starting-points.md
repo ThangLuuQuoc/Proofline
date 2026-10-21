@@ -88,16 +88,22 @@ Hai luồng chỉ khác nhau ở **điểm vào**. Từ R1 trở đi, cả hai �
 
 **Nguyên tắc:** trước khi sửa gì, **làm cho repo kiểm chứng được**.
 
+**Không đụng vào file có sẵn của repo khi chuẩn hóa:**
+- Mọi file Proofline sinh ra nằm trong **thư mục artifacts**: mặc định `<repo>/.proofline/` (đi qua PR, cùng phiên bản với code); hoặc `<workspace>/targets/<tên repo>/` nếu khai báo `artifacts_location: workspace` cho team không muốn có file Proofline trong repo.
+- Tài liệu có sẵn của repo (vd `docs/FEATURES.md`) chỉ là **nguồn để đọc**, không bao giờ bị sửa hay ghi đè, kể cả khi trùng tên khác hoa thường trên Windows/macOS.
+- Kịch bản người dùng mới chỉ **thêm file mới** vào `journeys_dir`, chọn chỗ bộ chạy test của repo tìm thấy (vd tiniagent dùng Playwright đọc `./e2e` nên `journeys_dir: e2e/journeys`).
+- Mọi thay đổi trong repo đích đi qua nhánh `proofline/*` trong worktree riêng rồi mở PR; bản checkout người dùng đang làm việc không bị thay đổi.
+
 | Bước | Agent làm | Người làm | Đầu ra |
 | :--- | :--- | :--- | :--- |
 | 1. Đánh giá | `proofline assess`: độ phủ test, CI, app có chạy trong sandbox không, tài liệu; `proofline init`/`doctor` dò cấu hình | Xác nhận cấu hình dò được | Báo cáo mức sẵn sàng + danh sách việc để lên mức |
 | 2. Phỏng vấn gu | Phỏng vấn gu (mục 6); rút thêm quy ước từ code hiện có và `proofline taste mine` nếu có lịch sử review | Trả lời | Bản nháp `tech-lead-taste.md` |
-| 3. Kiểm kê tính năng ngược | Đọc code, liệt kê tính năng hiện có và hành vi quan sát được | **Xác nhận / sửa danh sách** | `docs/features.md` trong repo đích |
+| 3. Kiểm kê tính năng ngược | Đọc code, liệt kê tính năng hiện có và hành vi quan sát được | **Xác nhận / sửa danh sách** | `.proofline/features.md` (tài liệu tính năng có sẵn chỉ là nguồn đọc) |
 | 4. Khóa hành vi | Viết **characterization test** (ghi lại hành vi hiện tại) và kịch bản người dùng cho từng tính năng; dựng CI, devcontainer, `app_runtime` | Review PR | Repo lên **R2** |
 | 5. Golden Set | `proofline golden mine` nếu đủ bug lịch sử; nếu không, `proofline golden synth` (mục 8) | Chọn case | Repo lên **R3** khi đủ case và có baseline |
 | 6. Vòng chạy bình thường | Như kế hoạch chính | | |
 
-**Định dạng danh sách tính năng** (`docs/features.md`, đường dẫn đổi được qua `onboarding.existing_repo_track.feature_inventory_path`; tìm không phân biệt hoa thường). `proofline assess` đọc định dạng này để đo tỷ lệ tính năng có kịch bản người dùng:
+**Định dạng danh sách tính năng** (`features.md` trong thư mục artifacts, tên file đổi được qua `onboarding.existing_repo_track.feature_inventory_file`). `proofline assess` chỉ đọc file này để đo tỷ lệ tính năng có kịch bản người dùng; nếu chưa có, assess báo tài liệu tính năng gốc tìm được trong repo (các file `.md` có chữ "feature" ở gốc hoặc `docs/`) để dùng làm nguồn cho `proofline features draft`:
 
 ```markdown
 <!-- proofline:confirmed -->   ← người thêm dòng này sau khi rà danh sách
@@ -110,7 +116,7 @@ journey: `tests/journeys/login.spec.ts`
 journey: `tests/journeys/create-agent.spec.ts`
 ```
 
-Mỗi tính năng là một tiêu đề `F-<số>`; dòng `journey:` trỏ tới file kịch bản người dùng. Tính năng chưa có dòng `journey:` (hoặc file chưa tồn tại) bị tính là chưa có kịch bản.
+Mỗi tính năng là một tiêu đề `F-<số>`; dòng `journey:` trỏ tới file kịch bản người dùng (đường dẫn tính từ gốc repo, có thể là file mới trong `journeys_dir` hoặc test e2e có sẵn của repo). Tính năng chưa có dòng `journey:` (hoặc file chưa tồn tại) bị tính là chưa có kịch bản. Nên ghi thêm `source:` trỏ về đoạn tương ứng trong tài liệu gốc để người rà dễ đối chiếu.
 
 **Lưu ý về characterization test:** test này ghi lại hành vi *hiện tại*, kể cả hành vi sai. Khi agent phát hiện hành vi có vẻ là lỗi trong lúc viết, nó **không sửa** mà ghi vào digest dưới dạng đề xuất issue để người quyết.
 

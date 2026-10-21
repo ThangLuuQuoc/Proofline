@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from conftest import REPO_CONFIG
 
@@ -107,3 +109,18 @@ def test_config_path_from_env(monkeypatch, config_dict, write_config):
     path = write_config(config_dict)
     monkeypatch.setenv("PROOFLINE_CONFIG", str(path))
     assert load_config().version == "test"
+
+
+def test_target_repo_artifacts_dir(config_dict):
+    repo = ProoflineConfig.model_validate(config_dict).target_repo("svc")
+    assert repo.journeys_dir == "tests/journeys"
+    assert repo.artifacts_dir(Path("r"), Path("w")) == Path("r") / ".proofline"
+    config_dict["target_repos"][0]["artifacts_location"] = "workspace"
+    repo = ProoflineConfig.model_validate(config_dict).target_repo("svc")
+    assert repo.artifacts_dir(Path("r"), Path("w")) == Path("w") / "targets" / "svc"
+
+
+def test_invalid_artifacts_location(config_dict, write_config):
+    config_dict["target_repos"][0]["artifacts_location"] = "elsewhere"
+    with pytest.raises(ConfigError):
+        load_config(write_config(config_dict))

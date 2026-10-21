@@ -47,13 +47,27 @@ class AppRuntime(_Section):
     base_url: str = ""
 
 
+ARTIFACTS_DIRNAME = ".proofline"
+WORKSPACE_TARGETS_DIR = "targets"
+
+
 class TargetRepo(_Section):
     name: str
     local_path: str
     default_branch: str = "main"
     commands: dict[str, str] = Field(default_factory=dict)
     app_runtime: AppRuntime = Field(default_factory=AppRuntime)
+    # Nơi Proofline thêm kịch bản người dùng mới; chọn chỗ bộ chạy test của repo tìm thấy.
+    journeys_dir: str = "tests/journeys"
+    # repo: file Proofline sinh ra nằm trong <repo>/.proofline/ (đi qua PR);
+    # workspace: nằm ngoài repo, trong <workspace>/targets/<tên repo>/.
+    artifacts_location: Literal["repo", "workspace"] = "repo"
     model_overrides: dict[str, str] = Field(default_factory=dict)
+
+    def artifacts_dir(self, repo_path: Path, workspace: Path) -> Path:
+        if self.artifacts_location == "workspace":
+            return workspace / WORKSPACE_TARGETS_DIR / self.name
+        return repo_path / ARTIFACTS_DIRNAME
 
 
 class ProviderConfig(_Section):

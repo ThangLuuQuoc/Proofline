@@ -15,7 +15,8 @@
 ## 2. An toàn Codebase & File System
 1. **Không xóa các file cấu hình cốt lõi:** Không xóa `.gitignore`, `package.json`, `pyproject.toml`, `Dockerfile`, `CI/CD workflow` trừ khi Issue đó yêu cầu trực tiếp việc nâng cấp dependency.
 2. **Không commit file nhạy cảm:** Cấm commit file `.env`, file chứa API keys, token, secrets, hoặc file dữ liệu lớn (> 5MB).
-3. **Không thay đổi phong cách định dạng code của toàn bộ file:** Chỉ sửa đúng những dòng liên quan đến logic bug/feature. Tránh auto-format toàn bộ file gây ra diff hàng ngàn dòng vô nghĩa (diff pollution).
+3. **Không sửa file có sẵn khi chuẩn hóa repo (onboarding):** file Proofline sinh ra chỉ nằm trong thư mục artifacts (`.proofline/` hoặc `targets/<repo>/`); tài liệu có sẵn của repo chỉ được đọc; kịch bản người dùng chỉ thêm file mới vào `journeys_dir`.
+4. **Không thay đổi phong cách định dạng code của toàn bộ file:** Chỉ sửa đúng những dòng liên quan đến logic bug/feature. Tránh auto-format toàn bộ file gây ra diff hàng ngàn dòng vô nghĩa (diff pollution).
 
 ---
 
@@ -23,7 +24,7 @@
 1. **Không mở PR nếu chưa có Test:** Mọi bug fix đều phải có unit/integration test chứng minh bug đã từng tồn tại và hiện tại đã được giải quyết.
 2. **Không tắt test cũ để "làm xanh" build:** Tuyệt đối cấm xóa, skip (`@pytest.mark.skip`, `it.skip`), hoặc comment out các test case cũ bị fail. Nếu test cũ fail, đó là lỗi do code mới gây ra (regression).
 3. **Zero New Warnings:** Code mới sinh ra không được làm tăng số lượng cảnh báo linter hoặc typechecker.
-4. **Kịch bản người dùng phải trung thực:** Với thay đổi ảnh hưởng hành vi người dùng, kịch bản trong `tests/journeys/` phải diễn đạt đúng mục tiêu của issue và phải fail trên bản lỗi. Cấm viết kịch bản chỉ để "qua gate" (khẳng định quá lỏng, bỏ qua bước chính).
+4. **Kịch bản người dùng phải trung thực:** Với thay đổi ảnh hưởng hành vi người dùng, kịch bản trong `journeys_dir` phải diễn đạt đúng mục tiêu của issue và phải fail trên bản lỗi. Cấm viết kịch bản chỉ để "qua gate" (khẳng định quá lỏng, bỏ qua bước chính).
 
 ---
 

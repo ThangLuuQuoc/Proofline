@@ -34,6 +34,9 @@ journey: tests/journeys/create-agent.spec.ts
 """
 
 
+ORIGINAL_DOC = "# Danh mục tính năng gốc của repo\n| Agent Studio | Tạo agent |\n"
+
+
 def ok(command: str, cwd: Path, timeout: float) -> CommandResult:
     return CommandResult(command, 0, "", 1.0)
 
@@ -53,7 +56,9 @@ def make_repo(root: Path, *, journeys: int = 2) -> Path:
     (repo / ".git" / "config").write_text(
         '[remote "origin"]\n\turl = https://github.com/acme/svc.git\n', encoding="utf-8"
     )
-    (repo / "docs" / "FEATURES.md").write_text(INVENTORY, encoding="utf-8")
+    (repo / "docs" / "FEATURES.md").write_text(ORIGINAL_DOC, encoding="utf-8")
+    (repo / ".proofline").mkdir()
+    (repo / ".proofline" / "features.md").write_text(INVENTORY, encoding="utf-8")
     (repo / "tests" / "journeys").mkdir(parents=True)
     for name in ["login.spec.ts", "create-agent.spec.ts"][:journeys]:
         (repo / "tests" / "journeys" / name).write_text("//", encoding="utf-8")
@@ -73,9 +78,6 @@ def cfg(config_dict) -> ProoflineConfig:
         }
     )
     config_dict["readiness"] = {"levels": {"R2": {"min_features_with_journey_ratio": 0.6}}}
-    config_dict["onboarding"] = {
-        "existing_repo_track": {"feature_inventory_path": "docs/features.md"}
-    }
     return ProoflineConfig.model_validate(config_dict)
 
 
@@ -164,14 +166,44 @@ def test_journey_coverage_below_threshold(cfg, tmp_path):
     criterion = by_key(result, "features_with_journey")
     assert criterion.status == "fail"
     assert "F-2" in criterion.action and "F-3" in criterion.action
+    assert "tests/journeys/" in criterion.action
 
 
 def test_unconfirmed_inventory(cfg, tmp_path):
     repo = make_repo(tmp_path)
-    (repo / "docs" / "FEATURES.md").write_text("# Tính năng\n", encoding="utf-8")
+    (repo / ".proofline" / "features.md").write_text("# Tính năng\n", encoding="utf-8")
     criterion = by_key(assess(make_ctx(cfg, tmp_path, repo)), "feature_inventory_confirmed")
     assert criterion.status == "fail"
+    assert ".proofline/features.md" in criterion.detail
     assert CONFIRMED_MARKER in criterion.action
+
+
+def test_original_doc_is_only_a_source(cfg, tmp_path):
+    # Tài liệu gốc trùng tên (khác hoa thường), thậm chí đúng định dạng Proofline,
+    # vẫn không được coi là danh sách tính năng của Proofline và không bị sửa.
+    repo = make_repo(tmp_path)
+    (repo / ".proofline" / "features.md").unlink()
+    (repo / "docs" / "FEATURES.md").write_text(INVENTORY, encoding="utf-8")
+    result = assess(make_ctx(cfg, tmp_path, repo))
+    inventory = by_key(result, "feature_inventory_confirmed")
+    assert inventory.status == "fail"
+    assert "docs/FEATURES.md" in inventory.detail and "nguồn" in inventory.detail
+    assert "proofline features draft" in inventory.action
+    assert by_key(result, "features_with_journey").status == "unknown"
+    assert (repo / "docs" / "FEATURES.md").read_text(encoding="utf-8") == INVENTORY
+
+
+def test_workspace_artifacts_location(config_dict, tmp_path):
+    config_dict["target_repos"][0]["artifacts_location"] = "workspace"
+    cfg = ProoflineConfig.model_validate(config_dict)
+    repo = make_repo(tmp_path)
+    (repo / ".proofline" / "features.md").unlink()
+    target = tmp_path / "targets" / "svc"
+    target.mkdir(parents=True)
+    (target / "features.md").write_text(INVENTORY, encoding="utf-8")
+    criterion = by_key(assess(make_ctx(cfg, tmp_path, repo)), "feature_inventory_confirmed")
+    assert criterion.status == "pass"
+    assert criterion.detail.startswith("targets/svc/features.md")
 
 
 def test_no_ci_config(cfg, tmp_path):

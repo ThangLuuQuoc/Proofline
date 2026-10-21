@@ -238,41 +238,69 @@ def check_app_runtime(ctx: AssessContext) -> Criterion:
 # ---- R2 ---------------------------------------------------------------------------------
 
 
-def find_feature_inventory(ctx: AssessContext) -> Path | None:
-    configured = ctx.config.extra_value(
-        "onboarding", "existing_repo_track", "feature_inventory_path", default="docs/features.md"
+def inventory_path(ctx: AssessContext) -> Path:
+    """Danh sách tính năng của Proofline: luôn nằm trong thư mục artifacts, không bao giờ là
+    tài liệu gốc của repo (tránh ghi đè, kể cả trùng tên khác hoa thường trên Windows/macOS)."""
+    filename = ctx.config.extra_value(
+        "onboarding", "existing_repo_track", "feature_inventory_file", default="features.md"
     )
-    # Tìm theo tên không phân biệt hoa thường nhưng trả về tên thật trên đĩa
-    # (trên Windows, `exists()` của docs/features.md cũng đúng với docs/FEATURES.md).
-    target = ctx.repo_path / configured
-    if not target.parent.is_dir():
-        return None
-    for candidate in target.parent.iterdir():
-        if candidate.name.lower() == target.name.lower() and candidate.is_file():
-            return candidate
-    return None
+    return ctx.repo.artifacts_dir(ctx.repo_path, ctx.workspace) / filename
+
+
+def find_source_feature_docs(repo_path: Path) -> list[str]:
+    """Tài liệu tính năng có sẵn của repo: chỉ đọc, dùng làm nguồn cho `features draft`."""
+    found = []
+    for folder in (repo_path, repo_path / "docs"):
+        if folder.is_dir():
+            for path in sorted(folder.iterdir()):
+                if (
+                    path.is_file()
+                    and path.suffix.lower() == ".md"
+                    and "feature" in path.stem.lower()
+                ):
+                    found.append(path.relative_to(repo_path).as_posix())
+    return found
+
+
+def _display(path: Path, ctx: AssessContext) -> str:
+    for base in (ctx.repo_path, ctx.workspace):
+        try:
+            return path.relative_to(base).as_posix()
+        except ValueError:
+            continue
+    return str(path)
 
 
 def check_feature_inventory(ctx: AssessContext) -> Criterion:
-    inventory = find_feature_inventory(ctx)
-    if inventory is None:
+    inventory = inventory_path(ctx)
+    shown = _display(inventory, ctx)
+    if not inventory.is_file():
+        sources = find_source_feature_docs(ctx.repo_path)
+        if sources:
+            joined = ", ".join(sources)
+            return Criterion(
+                "feature_inventory_confirmed",
+                "R2",
+                "fail",
+                f"chưa có {shown}; tài liệu gốc {joined} chỉ dùng làm nguồn, không sửa",
+                f"Tạo {shown} từ {joined} (proofline features draft), rồi xác nhận.",
+            )
         return Criterion(
             "feature_inventory_confirmed",
             "R2",
             "fail",
-            "chưa có danh sách tính năng",
-            "Kiểm kê tính năng thành docs/features.md và xác nhận.",
+            f"chưa có {shown}",
+            f"Kiểm kê tính năng từ code thành {shown} (proofline features draft), rồi xác nhận.",
         )
-    rel = inventory.relative_to(ctx.repo_path).as_posix()
     if CONFIRMED_MARKER not in inventory.read_text(encoding="utf-8", errors="replace"):
         return Criterion(
             "feature_inventory_confirmed",
             "R2",
             "fail",
-            f"có {rel} nhưng chưa được xác nhận",
-            f"Rà {rel} rồi thêm dòng {CONFIRMED_MARKER} để xác nhận.",
+            f"có {shown} nhưng chưa được xác nhận",
+            f"Rà {shown} rồi thêm dòng {CONFIRMED_MARKER} để xác nhận.",
         )
-    return Criterion("feature_inventory_confirmed", "R2", "pass", f"{rel} đã xác nhận")
+    return Criterion("feature_inventory_confirmed", "R2", "pass", f"{shown} đã xác nhận")
 
 
 def parse_features(text: str) -> dict[str, str | None]:
@@ -288,10 +316,15 @@ def parse_features(text: str) -> dict[str, str | None]:
 
 def check_journey_coverage(ctx: AssessContext) -> Criterion:
     needed = float(ctx.config.readiness.threshold("R2", "min_features_with_journey_ratio", 0.8))
-    inventory = find_feature_inventory(ctx)
-    features = (
-        parse_features(inventory.read_text(encoding="utf-8", errors="replace")) if inventory else {}
-    )
+    inventory = inventory_path(ctx)
+    if not inventory.is_file():
+        return Criterion(
+            "features_with_journey",
+            "R2",
+            "unknown",
+            f"chưa có {_display(inventory, ctx)} để đối chiếu",
+        )
+    features = parse_features(inventory.read_text(encoding="utf-8", errors="replace"))
     if not features:
         return Criterion(
             "features_with_journey",
@@ -311,7 +344,11 @@ def check_journey_coverage(ctx: AssessContext) -> Criterion:
     missing = [fid for fid in features if fid not in covered]
     listed = ", ".join(missing[:10]) + (" ..." if len(missing) > 10 else "")
     return Criterion(
-        "features_with_journey", "R2", "fail", detail, f"Viết kịch bản người dùng cho: {listed}"
+        "features_with_journey",
+        "R2",
+        "fail",
+        detail,
+        f"Viết kịch bản người dùng trong {ctx.repo.journeys_dir}/ cho: {listed}",
     )
 
 
