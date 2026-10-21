@@ -1,0 +1,407 @@
+# Proofline Configuration Settings
+version: "1.5"
+
+# Mọi đường dẫn bên dưới là tương đối so với thư mục gốc Proofline (workspace_root).
+factory:
+  name: "Proofline Autonomous Engineering"
+  workspace_root: "."
+  worktrees_dir: ".worktrees"
+  log_dir: "logs"
+  state_db: "state/proofline.db"
+
+# Repo đích mà swarm làm việc trên đó (khai báo theo từng repo).
+# `proofline init` tự dò các giá trị này từ CI/devcontainer/docker-compose, người xác nhận.
+target_repos:
+  - name: "example-service"          # TODO: thay bằng repo thật ở Phase 0
+    local_path: "../example-service"
+    default_branch: "main"
+    container_image: "example-service-dev:latest"
+    commands:
+      install: "pip install -e .[dev]"
+      test: "pytest -q"
+      lint: "ruff check ."
+      typecheck: "mypy ."
+    app_runtime:                     # Cách khởi chạy app trong sandbox cho User Journey gate
+      enabled: false                 # Bỏ trống/tắt → user_journey = not_applicable → không bao giờ tự merge
+      start_command: ""              # vd: "docker compose up -d app db"
+      seed_command: ""               # vd: "python manage.py loaddata fixtures/dev.json"
+      healthcheck_url: ""            # vd: "http://localhost:8000/health"
+      startup_timeout_seconds: 120
+      base_url: ""
+      journey_tools: ["http", "cli", "browser"]
+    model_overrides: {}              # Đổi model theo vai trò cho riêng repo này, vd: { heavy_coding: "claude-opus-5-5" }
+
+# Điểm xuất phát (docs/05-starting-points.md)
+# proofline start: repo trống / chỉ có tài liệu ý tưởng → luồng A (R0); đã có code → luồng B (R1)
+onboarding:
+  starting_point: "auto"             # auto | idea | existing_repo
+  shadow_mode_first: true            # Chạy shadow trên vài issue trước khi mở PR thật
+  interview:
+    product_questions: true          # Chỉ dùng ở luồng A
+    taste_questions: 12              # Số câu phỏng vấn gu (khoảng 10-15)
+    output_path: "docs/product/interview.md"   # Trong repo đích
+  idea_track:                        # Luồng A
+    spec_path: "docs/product/spec.md"
+    adr_dir: "docs/product/adr"
+    acceptance_dir: "tests/journeys/acceptance"
+    skeleton_workers: 1              # Walking skeleton chỉ dùng 1 worker
+  existing_repo_track:               # Luồng B
+    feature_inventory_path: "docs/features.md"
+    report_suspected_bugs_as_issues: true   # Hành vi có vẻ sai khi viết characterization test: đề xuất issue, không sửa
+
+# Mức sẵn sàng của repo (proofline assess đo tự động mỗi đêm). Ngưỡng là giá trị khởi điểm.
+readiness:
+  assess_schedule: "nightly"
+  levels:
+    R1:
+      container_builds: true
+      app_starts_and_healthy: true
+      test_command_runs: true
+    R2:
+      feature_inventory_confirmed: true
+      min_features_with_journey_ratio: 0.80
+      ci_green_on_default_branch: true
+    R3:
+      every_feature_has_regression_tests: true
+      min_golden_set_cases: 30
+      max_synthetic_ratio: 0.70
+      baseline_measured: true
+    R4:
+      min_decision_replay_prs: 30
+      min_human_decisions_per_type: 50
+  downgrade:
+    ci_red_hours: 24                 # CI đỏ trên nhánh mặc định quá ngưỡng → tụt mức
+    app_unhealthy_runs: 3            # App không khởi chạy được N lần assess liên tiếp → tụt mức
+
+# Worker engine: dùng agent có sẵn, không tự viết vòng lặp agent
+worker:
+  engine: "claude-code-headless"     # claude-code-headless | claude-agent-sdk
+  permission_mode: "restricted"      # Chặn lệnh nguy hiểm (force push, merge, đọc secret) bằng hook/permission
+  playbooks_by_task_type: true
+  load_taste: true                   # Nạp playbooks/tech-lead-taste.md vào ngữ cảnh worker
+
+# Cách ly môi trường thực thi
+sandbox:
+  runtime: "docker"
+  cpu_limit: 2
+  memory_limit: "4g"
+  network:
+    default: "deny"
+    allow:                           # Chỉ API model và registry package
+      - "api.anthropic.com"
+      - "pypi.org"
+      - "files.pythonhosted.org"
+      - "registry.npmjs.org"
+  pass_host_env: false               # Không truyền biến môi trường/secret của máy chủ vào container
+
+# Quản lý hàng đợi và chi phí
+# Ngân sách dưới đây là giá trị KHỞI ĐIỂM; hiệu chỉnh lại theo p90 chi phí thực đo ở Phase 0.
+concurrency:
+  max_parallel_workers: 3            # Tăng lên 5 ở Phase 3, 10+ chỉ khi hàng chờ review không dồn
+  max_open_agent_prs: 15             # Không mở thêm PR khi số PR chờ review vượt ngưỡng
+  task_timeout_seconds: 2700         # 45 phút / task
+  max_iterations_per_task: 8
+  cost_limits:
+    max_input_tokens_per_task: 2000000   # Bao gồm token đọc từ prompt cache
+    max_output_tokens_per_task: 80000
+    max_usd_budget_per_task: 3.00
+    max_usd_budget_per_night: 50.00
+    max_self_sourced_budget_share: 0.30  # Việc tự tìm (Cấp 3) không dùng quá 30% ngân sách đêm
+    enable_prompt_caching: true
+  circuit_breaker:
+    enabled: true
+    max_failed_attempts: 3           # Dừng sau 3 lần thử thất bại, giữ nhánh proofline/attempt-<id>
+
+# Phân tầng mô hình theo VAI TRÒ (Model Tiering Strategy)
+# Code chỉ gọi model qua tên vai trò (triage, fast_probe, heavy_coding, senior_reviewer, lead_agent),
+# không bao giờ ghi cứng ID model. Đổi model = đổi config, không sửa code.
+#
+# Thứ tự ưu tiên khi chọn model cho một vai trò:
+#   1. Biến môi trường PROOFLINE_MODEL_<VAI_TRÒ>  (vd: PROOFLINE_MODEL_HEAVY_CODING=claude-opus-5-5)
+#   2. target_repos[].model_overrides.<vai_trò>
+#   3. models.roles.<vai_trò> bên dưới
+#
+# Giá trị dưới đây là MẶC ĐỊNH TẠM THỜI. Đổi mặc định khi có kết quả so sánh trên Golden Set
+# (và Decision Replay Set với lead_agent); evals.gate_harness_changes áp dụng cho cả thay đổi model.
+models:
+  providers:
+    anthropic:
+      api_key_env: "ANTHROPIC_API_KEY"   # Biến duy nhất được truyền vào container cho provider này
+    # Thêm provider khác (qua LiteLLM) tại đây khi cần so sánh.
+
+  roles:
+    triage:                            # Phân loại issue, chấm Clarity Score, gán task_class
+      provider: "anthropic"
+      model: "claude-haiku-5-5"
+      fallback: []
+    fast_probe:                        # Đọc code, viết test tái hiện, sửa lỗi lint
+      provider: "anthropic"
+      model: "claude-haiku-5-5"
+      fallback: ["claude-sonnet-5-5"]
+    heavy_coding:                      # Viết patch / code chính, kịch bản người dùng
+      provider: "anthropic"
+      model: "claude-sonnet-5-5"
+      fallback: ["claude-opus-5-5"]
+    senior_reviewer:                   # Review phản biện diff và kịch bản người dùng
+      provider: "anthropic"
+      model: "claude-opus-5-5"
+      fallback: ["claude-sonnet-5-5"]
+    lead_agent:                        # Suy luận như Tech Lead: câu hỏi đầu tiên, good enough hay làm lại,
+      provider: "anthropic"            # phân tích phản hồi review để cập nhật taste
+      model: "claude-opus-5-5"
+      fallback: ["claude-sonnet-5-5"]
+
+# Bộ lọc đầu vào (Smart Triage)
+# Việc tự comment hỏi lại trên issue do autonomy.decisions.issue_clarify_comment quản lý.
+triage:
+  require_opt_in_label: "proofline:ready"   # Chỉ nhận issue người đã gắn nhãn (nguồn khác bật trong triggers)
+  min_clarity_score: 6                  # Thang 1-10; hiệu chỉnh theo mẫu 50 issue do người chấm
+  size_classes: ["S", "M", "L"]
+  reject_sizes: ["L"]                   # Task L cần chia nhỏ trước khi đưa vào swarm
+  task_classes: ["typo", "patch_bump", "add_tests", "lint_fix", "flaky_test", "logic_fix", "feature_change", "characterization", "ci_setup"]
+
+# Gate kiểm chứng theo loại task (do harness tự chạy, không tin báo cáo của agent)
+task_types:
+  bug:
+    label: "type:bug"
+    playbook: "playbooks/skills/bug-fix-playbook.md"
+    gates: ["repro_fails_on_base", "repro_passes_after_fix", "test_integrity", "no_regression", "no_new_static_warnings", "user_journey"]
+  refactor:
+    label: "type:refactor"
+    playbook: "playbooks/skills/refactor-playbook.md"   # TODO: chưa có
+    gates: ["test_files_unchanged", "test_integrity", "no_regression", "no_new_static_warnings"]
+  tech_debt:
+    label: "type:tech-debt"
+    playbook: "playbooks/skills/tech-debt-playbook.md"  # TODO: chưa có
+    gates: ["test_integrity", "no_regression", "static_warnings_decrease"]
+  feature:
+    label: "type:feature"
+    playbook: "playbooks/skills/feature-playbook.md"    # TODO: chưa có
+    require_approved_acceptance: true   # Issue phải có acceptance journey đã được người duyệt
+    gates: ["acceptance_fails_before", "acceptance_passes_after", "acceptance_unchanged", "new_tests_added", "existing_journeys_pass", "test_integrity", "no_regression", "no_new_static_warnings"]
+  characterization:                     # Luồng B: khóa hành vi hiện tại
+    label: "type:characterization"
+    playbook: "playbooks/skills/characterization-playbook.md"   # TODO: chưa có
+    gates: ["no_product_code_changed", "new_tests_pass_on_base", "test_integrity", "no_new_static_warnings"]
+  ci_setup:
+    label: "type:ci-setup"
+    gates: ["ci_green_on_branch", "no_product_code_changed"]
+  enabled: ["characterization", "ci_setup", "bug"]   # feature bật sau Phase 2; loại khác chỉ bật khi đã có playbook + case Golden Set
+
+verification:
+  repro_failure_must_be_assertion: true # Fail vì ImportError/SyntaxError/lỗi môi trường không được tính
+  forbid_test_skip_patterns: ["@pytest.mark.skip", "@pytest.mark.xfail", "it.skip", "describe.skip", "xit("]
+  baseline_from_base_commit: true       # Loại test vốn đã đỏ/chập chờn trên base khỏi regression
+  allowed_new_static_warnings: 0        # Tính theo delta so với base, không đòi tuyệt đối 0
+  user_journey:                         # Kiểm chứng như người dùng thật
+    scenarios_path: "tests/journeys"    # Trong repo đích; kịch bản được giữ lại làm test E2E hồi quy
+    must_fail_on_base: true             # Phải fail ở bước khẳng định mục tiêu trên base_commit
+    must_pass_after_fix: true
+    fail_on_console_errors: true
+    fail_on_http_5xx: true
+    fail_on_app_exceptions: true
+    max_latency_regression_pct: 20      # Cảnh báo/fail khi chậm hơn base quá ngưỡng
+    capture: ["http_transcript", "screenshots", "app_logs"]
+    reviewer_checks_scenario_matches_issue: true
+
+# Đánh giá rủi ro & bản tin buổi sáng
+review:
+  risk_score:                           # Thang 0-10, tính bằng code xác định
+    scale_max: 10
+    sensitive_paths: ["**/auth/**", "**/payment*/**", "**/migrations/**", "**/.github/workflows/**"]
+    max_diff_lines_low_risk: 80
+  morning_digest:
+    enabled: true
+    schedule: "07:00"
+    channel: "slack"                    # slack | teams | email
+    sort_by: "merge_readiness"
+    quick_reasons: ["sai_huong", "qua_rong", "sai_style", "khong_can"]   # Lý do chọn nhanh khi từ chối
+
+# Gu Tech Lead (Mental Model Imprinting)
+taste:
+  path: "playbooks/tech-lead-taste.md"
+  min_evidence_to_activate: 3           # Nguyên tắc chỉ thành active khi có ≥ 3 bằng chứng (hoặc từ /proofline teach)
+  teach_command: "/proofline teach"
+  feedback_sources:                     # Xếp theo độ mạnh của tín hiệu
+    - "human_edits_before_merge"
+    - "review_comments"
+    - "digest_reasons"
+    - "teach_command"
+  bootstrap_sources: ["interview", "code_conventions", "review_history"]   # Khi chưa có lịch sử review
+  flag_declared_vs_observed_conflicts: true   # Gu tuyên bố (phỏng vấn) mâu thuẫn gu quan sát → đưa vào digest
+  write_mode: "propose_pr"
+  require_decision_replay_pass: true
+  require_golden_set_pass: true
+  require_human_approval: true
+  per_reviewer_profiles: false          # Bật khi team nhiều người review có gu khác nhau
+
+# Bậc thang tự chủ (Autonomy Ladder)
+# Mức: L0 shadow · L1 gợi ý · L2 làm khi được duyệt · L3 làm rồi báo · L4 tự động (chỉ lấy mẫu)
+# Mức hiện tại do Autonomy Controller (code xác định) nâng/hạ dựa trên bảng decisions;
+# giá trị `current` dưới đây là điểm khởi đầu. Không bao giờ vượt `max`.
+autonomy:
+  kill_switch: false                    # true → mọi quyết định quay về L2 ngay lập tức
+  audit_sample_rate: 0.10               # 10% quyết định tự động vẫn gửi người xem
+  promotion:
+    min_decisions: 50
+    min_agreement: 0.95
+    min_precision_at_threshold: 0.95    # Độ tự tin phải được hiệu chuẩn
+    require_no_incident_in_window: true
+  demotion:
+    on_auto_merge_revert: true
+    on_gate_escape: true
+    agreement_below: 0.90
+  outcome_window_days: 30               # Theo dõi revert, CI sau merge, issue mở lại
+  veto_window_minutes: 120              # Thời gian người có thể phủ quyết ở L3
+  # min_readiness: mức sẵn sàng tối thiểu của repo để quyết định được vượt L1.
+  # Mức thực tế = thấp nhất giữa (mức kiếm được trong nhật ký, max, trần theo mức sẵn sàng).
+  decisions:
+    spec_approval:          { current: "L1", max: "L1", min_readiness: null }   # Luôn do người
+    architecture_choice:    { current: "L1", max: "L1", min_readiness: null }   # Luôn do người
+    acceptance_approval:    { current: "L1", max: "L1", min_readiness: null }   # Luôn do người
+    triage_accept:          { current: "L1", max: "L4", min_readiness: "R2" }
+    issue_clarify_comment:  { current: "L1", max: "L3", min_readiness: "R2" }
+    retry_or_abort:         { current: "L2", max: "L4", min_readiness: "R1" }
+    lead_redo_or_accept:    { current: "L1", max: "L4", min_readiness: "R2" }
+    pr_ready_for_review:    { current: "L2", max: "L3", min_readiness: "R2" }   # Bỏ trạng thái draft
+    auto_merge_low_risk:    { current: "L0", max: "L4", min_readiness: "R3" }   # Cấp 2 khi đạt L3+ (add_tests: xem auto_merge)
+    merge_logic_change:     { current: "L2", max: "L2", min_readiness: null }   # Không bao giờ tự merge thay đổi logic
+    self_sourced_task:      { current: "L0", max: "L3", min_readiness: "R4" }   # Cấp 3 khi đạt L3+
+    taste_or_playbook_update: { current: "L2", max: "L2", min_readiness: null }
+    # Outer Loop (Phase 7, docs/06-the-outer-loop.md)
+    feedback_to_issue:      { current: "L1", max: "L3", min_readiness: "R2" }   # Chỉ cho cụm đã tái hiện được
+    priority_ranking:       { current: "L1", max: "L3", min_readiness: "R3" }
+    customer_reply:         { current: "L1", max: "L1", min_readiness: null }   # Luôn do người gửi
+    revert_proposal:        { current: "L1", max: "L3", min_readiness: "R3" }   # L3 = tự mở PR revert; merge/release do người
+  auto_merge:
+    target_branches: ["develop", "staging"]   # Không bao giờ main/master; không release production
+    eligible_task_classes: ["typo", "patch_bump", "add_tests", "lint_fix"]
+    min_readiness_by_class:             # Ghi đè min_readiness của auto_merge_low_risk theo task_class
+      add_tests: "R2"                   # Thêm test không đổi hành vi: được xét sớm hơn
+      default: "R3"
+    max_risk_score: 2
+    max_diff_lines: 30
+    require_user_journey_pass: true     # not_applicable không được chấp nhận
+    require_reviewer_approve: true
+    require_lead_accept: true
+
+# Kích hoạt
+triggers:
+  nightly:
+    enabled: true
+    start: "23:00"
+  on_label_added: false                 # Bật ở Phase 6
+  on_ci_failure: false                  # Bật ở Phase 6
+  on_staging_error: false               # Bật ở Phase 6; nguồn: log/error tracker của staging
+  outer_loop_ingestion: false           # Bật ở Phase 7; lịch gom cụm và tái hiện theo outer_loop
+  self_sourced:                         # Cấp 3: tự tìm việc
+    enabled: false
+    scanners: ["lint_debt", "type_debt", "coverage_gaps", "flaky_tests", "outdated_dependencies"]
+
+git_automation:
+  auth: "github-app"                    # Worker: chỉ tạo nhánh proofline/* và mở PR; merge chỉ qua Autonomy Controller
+  branch_prefix: "proofline/issue-"
+  failed_branch_prefix: "proofline/attempt-"
+  create_draft_pr: true                 # Bỏ draft do autonomy.decisions.pr_ready_for_review quản lý
+  auto_assign_reviewers: []
+  pr_labels:
+    - "ai-generated"
+    - "proofline"
+    - "needs-human-review"
+  auto_merged_label: "proofline-auto-merged"
+
+# Bộ đánh giá chuẩn
+evals:
+  golden_set_path: "evals/golden-set"
+  golden_sources:                       # history (bug thật) | synthetic (cấy lỗi) | accumulated (việc đã xử lý)
+    enabled: ["history", "synthetic", "accumulated"]
+    report_per_source: true
+    min_real_cases_for_primary: 15      # Dưới ngưỡng: chỉ số chính dùng synthetic kèm cảnh báo
+    synthetic:
+      mutation_operators: ["flip_condition", "off_by_one", "drop_null_check", "change_constant"]
+      llm_realistic_bugs: true
+      require_covering_tests: true
+      determinism_check_runs: 5
+      issue_from_symptom: true          # issue.md viết từ triệu chứng, không lộ vị trí cấy lỗi
+  decision_replay_path: "evals/decision-replay"   # PR lịch sử + quyết định thật của người
+  runs_per_case: 3                      # Agent không tất định: chạy nhiều lần, báo cáo trung bình
+  primary_metric: "pass_at_1_mean"      # Chỉ số dùng để so sánh trước/sau; pass@3 chỉ là cận trên
+  report_metrics: ["pass_at_1_mean", "pass_at_3", "cost_usd_p50", "cost_usd_p90", "duration_p50", "duration_p90", "decision_agreement"]
+  case_selection:                       # Tiêu chí chọn case cho baseline
+    max_fix_lines: 100                  # Không tính file test
+    require_fix_with_tests: true
+    exclude_external_mocks: true        # Thanh toán, OAuth2 callback, dịch vụ bên thứ ba: để Phase 5
+    determinism_check_runs: 5           # Test phải pass/fail ổn định trên commit sửa / base_commit
+    size_mix: { S: 0.6, M: 0.3, L: 0.1 }
+  reports_dir: "evals/reports"
+  gate_harness_changes: true            # Mọi thay đổi playbook/taste/model/harness phải chạy lại bộ đánh giá
+
+# Outer Loop: phản hồi khách hàng, thảo luận team, telemetry production (Phase 7)
+# Chi tiết: docs/06-the-outer-loop.md. Tên nhà cung cấp cụ thể điền khi bật từng nguồn.
+outer_loop:
+  enabled: false                        # Bật sau khi Phase 0-6 nghiệm thu
+  min_readiness_for_issues: "R2"        # Repo chưa đạt chỉ gom cụm và báo cáo
+  max_budget_share: 0.20                # Tái hiện cụm dùng tối đa 20% ngân sách đêm
+  sources:                              # Chỉ đọc, opt-in từng nguồn
+    error_tracker:
+      enabled: false
+      provider: ""                      # vd: sentry
+      mode: "webhook"                   # webhook | poll
+      min_events_per_day: 5             # Nhóm lỗi dưới ngưỡng không được xét
+    support_tickets:
+      enabled: false
+      provider: ""                      # vd: zendesk
+      mode: "poll"
+    community_chat:
+      enabled: false
+      provider: ""                      # vd: discord
+      channels: []                      # Chỉ kênh công khai được khai báo
+    team_discussions:
+      enabled: false
+      provider: ""                      # vd: slack | teams | github_discussions
+      channels: []
+      include_direct_messages: false    # Không bao giờ đọc tin nhắn riêng
+      announce_bot_presence: true
+  safety:
+    reader_has_tools: false             # Reader Agent không có công cụ nào
+    structured_output_only: true        # Đầu ra theo schema cố định, harness kiểm tra
+    max_field_chars: 1000
+    raw_content_to_workers: false       # Worker chỉ nhận bản ghi có cấu trúc
+    flag_agent_directed_instructions: true   # Gắn cờ câu ra lệnh cho AI/hệ thống → người xem
+    redact_pii: true
+    pii_types: ["email", "phone", "person_name", "address", "payment_number", "api_token", "ip_address", "user_id"]
+    store_raw_content: false            # Chỉ lưu bản đã che + link về hệ thống nguồn
+    retention_days: 90
+    synthetic_data_only_in_tests: true
+  clustering:
+    window_days: 7
+    min_signals_per_cluster: 3
+  reproduction:
+    required_before_issue: true         # Tái hiện trước khi thành issue
+    max_attempts: 2
+    budget_usd_per_cluster: 2.00
+  release_monitor:
+    release_detection: "tags"           # tags | deploy_events
+    compare_window_days: 7
+    normalize_by_traffic: true          # Khi có số liệu lưu lượng
+    resolved_drop_ratio: 0.80           # Giảm ≥ 80% → resolved
+    partial_drop_ratio: 0.30            # Giảm 30-80% → partially_resolved
+    regression_increase_ratio: 1.20     # Tăng ≥ 20% → regressed → đề xuất revert
+    reopen_watch_days: 30
+  customer_reply:
+    draft_only: true                    # Agent chỉ soạn; người gửi
+    propose_close_only_when: "resolved"
+
+# Học từ kết quả (Harness² thực dụng)
+harness_learning:
+  auto_extract_skills: true
+  write_mode: "propose_pr"              # Đề xuất dạng PR, không ghi trực tiếp vào playbook
+  require_golden_set_pass: true
+  require_human_approval: true
+  skill_store_path: "playbooks/skills"
+  guardrails_path: "playbooks/guardrails.md"
+
+# Quan sát
+observability:
+  tracing: "langfuse"                   # langfuse | otel | none
+  log_level: "info"
