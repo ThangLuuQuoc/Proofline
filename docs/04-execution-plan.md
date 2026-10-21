@@ -445,7 +445,8 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 - [x] Khởi tạo git repo: github.com/ThangLuuQuoc/Proofline.
 - [x] Khung gói Python `proofline` (uv): CLI, đọc/kiểm tra config, chọn model theo vai trò, mức tự chủ hiệu lực, schema `state/proofline.db`, test và CI.
 - [ ] Chọn 1–2 repo đích; kiểm tra test suite và app khởi chạy được trong container.
-- [ ] Viết `proofline start` / `proofline assess` và đo mức sẵn sàng của repo đích.
+- [x] Viết `proofline assess` (12 tiêu chí R1–R4) và đo repo đích đầu tiên `tiniagent`: R0, thiếu Dockerfile/devcontainer để lên R1.
+- [ ] Viết `proofline start`.
 - [ ] Viết `proofline init` / `proofline doctor` / `proofline interview` và chạy shadow mode trên 3 issue.
 - [ ] Đưa ít nhất 1 repo lên R2 (kiểm kê tính năng, characterization test, CI).
 - [ ] Thu thập 30–50 case cho `evals/golden-set/` (qua `proofline golden mine` / `proofline golden synth`).

@@ -10,6 +10,7 @@ from typing import Annotated, TextIO, cast
 import typer
 
 from proofline import __version__
+from proofline.assess import AssessContext, Assessment, assess, save_snapshot
 from proofline.autonomy import effective_level
 from proofline.config import ConfigError, ProoflineConfig, load_config, resolve_model
 from proofline.levels import READINESS_LEVELS, ReadinessLevel
@@ -139,3 +140,69 @@ def db_init(
     typer.secho(
         f"Đã sẵn sàng: {db_path} ({len(tables)} bảng: {', '.join(tables)})", fg=typer.colors.GREEN
     )
+
+
+STATUS_MARK = {"pass": "[PASS]", "fail": "[FAIL]", "unknown": "[ ?? ]"}
+STATUS_COLOR = {
+    "pass": typer.colors.GREEN,
+    "fail": typer.colors.RED,
+    "unknown": typer.colors.YELLOW,
+}
+
+
+@app.command("assess")
+def assess_cmd(
+    repo: Annotated[str, typer.Argument(help="Tên repo đích trong target_repos.")],
+    run: Annotated[
+        bool,
+        typer.Option(
+            "--run",
+            help="Chạy lệnh của repo (build container, cài đặt, test, khởi chạy app) và hỏi CI.",
+        ),
+    ] = False,
+    save: Annotated[
+        bool, typer.Option("--save/--no-save", help="Lưu snapshot vào state DB.")
+    ] = True,
+    config: ConfigOption = None,
+) -> None:
+    """Đo mức sẵn sàng R0–R4 của repo đích và việc cần làm để lên mức tiếp theo."""
+    cfg = _load(config)
+    try:
+        target = cfg.target_repo(repo)
+    except ConfigError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from exc
+    workspace = Path.cwd() / cfg.factory.workspace_root
+    ctx = AssessContext(
+        config=cfg,
+        repo=target,
+        repo_path=(workspace / target.local_path).resolve(),
+        workspace=workspace,
+        run_commands=run,
+    )
+    if run:
+        typer.echo("Đang chạy lệnh của repo, có thể mất vài phút...")
+    result = assess(ctx)
+    _print_assessment(result)
+    if save:
+        db_path = workspace / cfg.factory.state_db
+        snapshot_id = save_snapshot(db_path, result)
+        typer.echo(f"\nĐã lưu snapshot {snapshot_id[:8]} vào {cfg.factory.state_db}")
+
+
+def _print_assessment(result: Assessment) -> None:
+    typer.secho(f"Repo {result.repo}: mức sẵn sàng {result.level}", bold=True)
+    for level in READINESS_LEVELS[1:]:
+        items = [c for c in result.criteria if c.level == level]
+        if not items:
+            continue
+        typer.echo(f"\n{level}")
+        for c in items:
+            typer.secho(f"  {STATUS_MARK[c.status]} ", fg=STATUS_COLOR[c.status], nl=False)
+            typer.echo(f"{c.key}: {c.detail}")
+    target = result.next_level()
+    missing = result.missing_for_next_level()
+    if target and missing:
+        typer.secho(f"\nĐể lên {target}:", bold=True)
+        for c in missing:
+            typer.echo(f"  - {c.action or c.detail}")

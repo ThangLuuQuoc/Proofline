@@ -86,6 +86,7 @@ Các lệnh đã có:
 | `proofline config model <vai_trò> [--repo <tên>]` | Model sẽ dùng cho vai trò (ưu tiên: `PROOFLINE_MODEL_<VAI_TRÒ>` → override theo repo → mặc định) |
 | `proofline autonomy show --readiness <R0–R4>` | Mức tự chủ hiệu lực của mọi loại quyết định |
 | `proofline db init [--path <file>]` | Tạo `state/proofline.db` và áp schema |
+| `proofline assess <repo> [--run] [--no-save]` | Đo mức sẵn sàng R0–R4 của repo đích, liệt kê việc cần làm để lên mức tiếp theo. Không có `--run` chỉ kiểm tra tĩnh; có `--run` sẽ build container, cài đặt, chạy test, khởi chạy app và hỏi trạng thái CI |
 
 Chạy lệnh trong môi trường dự án bằng `uv run proofline ...`.
 

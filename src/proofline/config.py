@@ -10,7 +10,7 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -38,10 +38,21 @@ class FactoryConfig(_Section):
     state_db: str = "state/proofline.db"
 
 
+class AppRuntime(_Section):
+    enabled: bool = False
+    start_command: str = ""
+    seed_command: str = ""
+    healthcheck_url: str = ""
+    startup_timeout_seconds: int = Field(default=120, gt=0)
+    base_url: str = ""
+
+
 class TargetRepo(_Section):
     name: str
     local_path: str
     default_branch: str = "main"
+    commands: dict[str, str] = Field(default_factory=dict)
+    app_runtime: AppRuntime = Field(default_factory=AppRuntime)
     model_overrides: dict[str, str] = Field(default_factory=dict)
 
 
@@ -99,12 +110,29 @@ class AutonomyConfig(_Section):
     auto_merge: AutoMergeConfig = Field(default_factory=AutoMergeConfig)
 
 
+class ReadinessConfig(_Section):
+    levels: dict[ReadinessLevel, dict[str, Any]] = Field(default_factory=dict)
+
+    def threshold(self, level: ReadinessLevel, key: str, default: Any) -> Any:
+        return self.levels.get(level, {}).get(key, default)
+
+
 class ProoflineConfig(_Section):
     version: str
     factory: FactoryConfig
     target_repos: list[TargetRepo] = Field(default_factory=list)
     models: ModelsConfig
     autonomy: AutonomyConfig
+    readiness: ReadinessConfig = Field(default_factory=ReadinessConfig)
+
+    def extra_value(self, *keys: str, default: Any = None) -> Any:
+        """Đọc một giá trị trong các mục chưa khai báo kiểu, vd ("evals", "golden_set_path")."""
+        node: Any = self.model_extra or {}
+        for key in keys:
+            if not isinstance(node, dict) or key not in node:
+                return default
+            node = node[key]
+        return node
 
     @model_validator(mode="after")
     def _overrides_use_known_roles(self) -> ProoflineConfig:

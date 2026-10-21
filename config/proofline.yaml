@@ -12,21 +12,21 @@ factory:
 # Repo đích mà swarm làm việc trên đó (khai báo theo từng repo).
 # `proofline init` tự dò các giá trị này từ CI/devcontainer/docker-compose, người xác nhận.
 target_repos:
-  - name: "example-service"          # TODO: thay bằng repo thật ở Phase 0
-    local_path: "../example-service"
-    default_branch: "main"
-    container_image: "example-service-dev:latest"
+  - name: "tiniagent"                # Repo đích đầu tiên (Phase 0, luồng B): Next.js 15 + pnpm
+    local_path: "../tiniagent"       # Tương đối so với workspace_root; clone từ github.com/ThangLuuQuoc/tiniagent
+    default_branch: "feat/full-flow" # Nhánh mặc định hiện tại trên GitHub (origin/HEAD)
+    container_image: ""              # Chưa có Dockerfile/devcontainer cho app
     commands:
-      install: "pip install -e .[dev]"
-      test: "pytest -q"
-      lint: "ruff check ."
-      typecheck: "mypy ."
+      install: "pnpm install --frozen-lockfile"
+      test: "pnpm test"
+      lint: "pnpm lint"
+      typecheck: "pnpm typecheck"
     app_runtime:                     # Cách khởi chạy app trong sandbox cho User Journey gate
-      enabled: false                 # Bỏ trống/tắt → user_journey = not_applicable → không bao giờ tự merge
-      start_command: ""              # vd: "docker compose up -d app db"
-      seed_command: ""               # vd: "python manage.py loaddata fixtures/dev.json"
-      healthcheck_url: ""            # vd: "http://localhost:8000/health"
-      startup_timeout_seconds: 120
+      enabled: true                  # Bỏ trống/tắt → user_journey = not_applicable → không bao giờ tự merge
+      start_command: "pnpm dev"      # next dev -p 3200
+      seed_command: ""               # vd: "pnpm db:push" khi cần schema
+      healthcheck_url: "http://localhost:3200/"
+      startup_timeout_seconds: 180
       base_url: ""
       journey_tools: ["http", "cli", "browser"]
     model_overrides: {}              # Đổi model theo vai trò cho riêng repo này, vd: { heavy_coding: "claude-opus-5-5" }

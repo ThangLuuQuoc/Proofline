@@ -97,6 +97,21 @@ Hai luồng chỉ khác nhau ở **điểm vào**. Từ R1 trở đi, cả hai �
 | 5. Golden Set | `proofline golden mine` nếu đủ bug lịch sử; nếu không, `proofline golden synth` (mục 8) | Chọn case | Repo lên **R3** khi đủ case và có baseline |
 | 6. Vòng chạy bình thường | Như kế hoạch chính | | |
 
+**Định dạng danh sách tính năng** (`docs/features.md`, đường dẫn đổi được qua `onboarding.existing_repo_track.feature_inventory_path`; tìm không phân biệt hoa thường). `proofline assess` đọc định dạng này để đo tỷ lệ tính năng có kịch bản người dùng:
+
+```markdown
+<!-- proofline:confirmed -->   ← người thêm dòng này sau khi rà danh sách
+
+### F-1: Đăng nhập bằng email
+Mô tả hành vi quan sát được...
+journey: `tests/journeys/login.spec.ts`
+
+### F-2: Tạo agent mới
+journey: `tests/journeys/create-agent.spec.ts`
+```
+
+Mỗi tính năng là một tiêu đề `F-<số>`; dòng `journey:` trỏ tới file kịch bản người dùng. Tính năng chưa có dòng `journey:` (hoặc file chưa tồn tại) bị tính là chưa có kịch bản.
+
 **Lưu ý về characterization test:** test này ghi lại hành vi *hiện tại*, kể cả hành vi sai. Khi agent phát hiện hành vi có vẻ là lỗi trong lúc viết, nó **không sửa** mà ghi vào digest dưới dạng đề xuất issue để người quyết.
 
 **Vì sao đây là chỗ tốt để kiếm tự chủ sớm:** việc thêm test không đổi hành vi, rủi ro thấp, số lượng nhiều. `add_tests` là `task_class` duy nhất được xét Cấp 2 từ R2.
