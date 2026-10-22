@@ -112,6 +112,8 @@ flowchart LR
 ```
 
 > Thời gian ước tính cho **1 kỹ sư toàn thời gian**. Golden Set và nhật ký quyết định là hai "đường ray" chạy xuyên suốt: một cái đo năng lực giải bài, một cái đo độ tin cậy khi ra quyết định.
+>
+> **Nhánh song song: giao diện qua ACP** ([07-acp-pandacode.md](07-acp-pandacode.md)). Proofline thành agent ACP để người dùng làm việc qua task board, thanh duyệt, bot và GitHub view của PandaCode (hoặc client ACP khác). Khung giao thức và luồng chỉ đọc (`/assess`, `/status`) làm được ngay; luồng có duyệt cần worker của Phase 1 và nhật ký quyết định; bot dùng chung với bản tin của Phase 4.
 
 ---
 
@@ -450,6 +452,8 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 - [ ] Viết `proofline start`.
 - [x] Viết `proofline start` / `proofline target add` (clone từ git URL, tự dò Node/Python/Go/Rust): bắt đầu bằng 2 lệnh.
 - [ ] Viết `proofline doctor` / `proofline interview` và chạy shadow mode trên 3 issue.
+- [x] Thiết kế tích hợp qua ACP với PandaCode (`docs/07-acp-pandacode.md`).
+- [ ] `proofline acp`: khung giao thức + luồng chỉ đọc (bước 1–2 của kế hoạch thử trong docs/07).
 - [ ] Đưa ít nhất 1 repo lên R2 (kiểm kê tính năng, characterization test, CI).
 - [ ] Thu thập 30–50 case cho `evals/golden-set/` (qua `proofline golden mine` / `proofline golden synth`).
 - [ ] Viết `src/eval_runner.py` và chạy baseline (Phase 0).
