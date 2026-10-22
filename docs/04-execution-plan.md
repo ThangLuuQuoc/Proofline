@@ -29,7 +29,7 @@
 | **Queue & state** | **SQLite** | Lưu task, chi phí, kết quả gate, nhật ký quyết định. |
 | **VCS** | **GitHub App** (quyền tối thiểu) + `gh` CLI | Worker chỉ tạo nhánh `proofline/*` và mở PR; chỉ Autonomy Controller được merge, và chỉ vào nhánh được phép. |
 | **Quan sát (observability)** | **Langfuse hoặc OpenTelemetry** | Trace từng lần chạy, chi phí, phân loại nguyên nhân thất bại. |
-| **Test / lint** | `pytest`, `ruff`, `mypy`, `npm test`, ... | Tự dò từ CI khi chạy `proofline init`, người xác nhận. |
+| **Test / lint** | `pytest`, `ruff`, `mypy`, `npm test`, ... | Tự dò từ file của repo khi chạy `proofline target add`, người xác nhận. |
 
 ---
 
@@ -60,8 +60,8 @@ Người dùng chỉ cần chạy `proofline start`. Hệ thống tự nhận bi
 
 | Thời điểm | Người dùng làm | Hệ thống làm |
 | :--- | :--- | :--- |
-| **Ngày 1 (khoảng 1 giờ)** | Chạy `proofline start`, cài GitHub App, trả lời phỏng vấn gu | `proofline assess` + `proofline init`/`doctor`: dò lệnh test/lint, `app_runtime`, dựng container; báo cáo mức sẵn sàng và việc cần làm. **Shadow mode** trên 3 issue |
-| **Tuần 1** | **Xác nhận danh sách tính năng** | Kiểm kê tính năng ngược thành `docs/features.md`; viết characterization test và kịch bản người dùng, dựng CI (→ R2) |
+| **Ngày 1 (khoảng 1 giờ)** | Chạy `proofline start`, cài GitHub App, trả lời phỏng vấn gu | `proofline start <git-url>`: tạo workspace, clone, dò lệnh test/lint, `app_runtime`, dựng container; báo cáo mức sẵn sàng và việc cần làm. **Shadow mode** trên 3 issue |
+| **Tuần 1** | **Xác nhận danh sách tính năng** | Kiểm kê tính năng ngược thành `.proofline/features.md` (tài liệu gốc chỉ là nguồn đọc); viết characterization test và kịch bản người dùng, dựng CI (→ R2) |
 | **Tuần 2** | Chọn case Golden Set | `proofline golden mine` nếu đủ bug lịch sử, không thì `proofline golden synth` (→ R3 khi có baseline) |
 | **Tuần 3 trở đi** | Review PR, bấm duyệt/từ chối kèm lý do, `/proofline teach` | PR draft cho bug/feature; ghi mọi quyết định để học và tính quyền tự chủ |
 
@@ -112,6 +112,8 @@ flowchart LR
 ```
 
 > Thời gian ước tính cho **1 kỹ sư toàn thời gian**. Golden Set và nhật ký quyết định là hai "đường ray" chạy xuyên suốt: một cái đo năng lực giải bài, một cái đo độ tin cậy khi ra quyết định.
+>
+> **Nhánh song song: giao diện qua ACP** ([07-acp-pandacode.md](07-acp-pandacode.md)). Proofline thành agent ACP để người dùng làm việc qua task board, thanh duyệt, bot và GitHub view của PandaCode (hoặc client ACP khác). Khung giao thức và luồng chỉ đọc (`/assess`, `/status`) làm được ngay; luồng có duyệt cần worker của Phase 1 và nhật ký quyết định; bot dùng chung với bản tin của Phase 4.
 
 ---
 
@@ -120,10 +122,10 @@ flowchart LR
 * **Mục tiêu:** Người dùng có repo sẵn thấy giá trị ngay ngày đầu; repo được đưa lên mức kiểm chứng được; có bộ đo khách quan để trả lời: *hệ thống giải đúng bao nhiêu %, tốn bao nhiêu, mất bao lâu?* Luồng B được xây trước vì dùng lại gần như toàn bộ verifier và đo được rõ ràng (xem [05-starting-points.md](05-starting-points.md) mục 10).
 * **Đầu việc cụ thể:**
   1. **`proofline start` + `proofline assess`:** nhận biết điểm xuất phát; đo mức sẵn sàng R0–R4 theo `readiness` trong config; báo cáo tiêu chí còn thiếu. Lưu kết quả vào bảng `readiness_snapshots`.
-  2. **`proofline init` + `proofline doctor`:** dò lệnh test/lint/typecheck từ CI, dò cách khởi chạy app và healthcheck (`app_runtime`), dựng container; người xác nhận rồi ghi vào `target_repos` trong config.
+  2. **`proofline target add` + `proofline doctor`:** clone repo, dò lệnh test/lint/typecheck, cách khởi chạy app và healthcheck (`app_runtime`), `journeys_dir`; ghi `targets/<tên>/target.yaml` để người xác nhận. `doctor` kiểm tra container, GitHub App, branch protection.
   3. **`proofline interview` (phần gu):** phỏng vấn 10–15 câu để bootstrap `tech-lead-taste.md` (nguồn `interview`); kết hợp `proofline taste mine` nếu repo có lịch sử review.
   4. **Shadow mode:** chạy worker trên 3–5 issue thật trong sandbox, không mở PR, gửi báo cáo buổi sáng.
-  5. **Kiểm kê tính năng & khóa hành vi** (với repo chưa đạt R2): agent viết `docs/features.md` từ code, người xác nhận; viết characterization test và kịch bản người dùng cho từng tính năng; dựng CI. Hành vi có vẻ sai được ghi thành đề xuất issue, không sửa.
+  5. **Kiểm kê tính năng & khóa hành vi** (với repo chưa đạt R2): agent viết `.proofline/features.md` từ code và tài liệu có sẵn (không sửa tài liệu gốc), người xác nhận; viết characterization test và kịch bản người dùng cho từng tính năng; dựng CI. Hành vi có vẻ sai được ghi thành đề xuất issue, không sửa.
   6. Chọn **1–2 repo đích** để đo baseline. Ưu tiên repo đã đạt R2 (hoặc đưa lên R2 bằng bước 5).
   7. **Golden Set từ ba nguồn** (`history` / `synthetic` / `accumulated`, chi tiết ở [05-starting-points.md](05-starting-points.md) mục 8):
      - **`proofline golden synth`** khi lịch sử bug quá ít: cấy lỗi vào hàm có test bao phủ, kiểm tra fail ổn định, viết `issue.md` từ triệu chứng người dùng thấy. Tỷ lệ synthetic tối đa 70%.
@@ -221,7 +223,7 @@ flowchart LR
 * **Tiêu chuẩn nghiệm thu:**
   - Người dùng mới đi từ `proofline start` đến báo cáo mức sẵn sàng và báo cáo shadow đầu tiên trong **≤ 1 giờ thao tác**.
   - `proofline assess` cho cùng kết quả khi chạy lại trên cùng commit.
-  - Ít nhất 1 repo đạt R2, có `docs/features.md` đã được người xác nhận.
+  - Ít nhất 1 repo đạt R2, có `.proofline/features.md` đã được người xác nhận.
   - Có báo cáo baseline tái lập được bằng 1 lệnh.
   - Ngưỡng ngân sách trong `proofline.yaml` được đặt lại theo **p90 chi phí thực tế** đo được.
 
@@ -253,7 +255,7 @@ flowchart LR
   4. **Regression gate:** toàn bộ test suite pass; so sánh với kết quả trên `base_commit` để loại test vốn đã đỏ/chập chờn.
   5. **Static gate:** số cảnh báo lint/typecheck **không tăng** so với base.
   6. **User Journey gate** (`src/journey_runner.py`):
-     - Agent viết **kịch bản người dùng** trong `tests/journeys/` của repo đích, mô tả mục tiêu người dùng trong issue: gọi API end-to-end (HTTP), chạy lệnh CLI, hoặc thao tác giao diện (Playwright: bấm nút, điền form, đọc kết quả).
+     - Agent viết **kịch bản người dùng** trong `journeys_dir` của repo đích (mặc định `tests/journeys/`, chỉ thêm file mới), mô tả mục tiêu người dùng trong issue: gọi API end-to-end (HTTP), chạy lệnh CLI, hoặc thao tác giao diện (Playwright: bấm nút, điền form, đọc kết quả).
      - Harness tự khởi chạy app trong sandbox theo `app_runtime` (seed data, chờ healthcheck), rồi chạy kịch bản **trên `base_commit` → phải FAIL ở bước khẳng định mục tiêu**, và **trên code đã sửa → phải PASS**. Đây là nguyên tắc repro áp dụng cho luồng người dùng: kịch bản không fail trên bản lỗi thì không chứng minh được gì.
      - Trong lúc chạy, harness bắt thêm: lỗi console trình duyệt, response 5xx, exception trong log app, và thời gian phản hồi so với base (cảnh báo khi chậm hơn ngưỡng cấu hình).
      - Thu evidence: transcript HTTP, ảnh chụp/video trước-sau, log. Đính kèm vào PR.
@@ -438,14 +440,20 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 
 - [x] Tài liệu nghiên cứu & kiến trúc.
 - [x] File quy tắc an toàn `playbooks/guardrails.md` (gồm quy tắc merge tự động).
-- [x] `config/proofline.yaml` v1.5 (model theo vai trò, app runtime, User Journey, taste, autonomy, mức sẵn sàng, task type feature, outer loop).
+- [x] Config mẫu `src/proofline/templates/proofline.yaml` v1.5 (model theo vai trò, app runtime, User Journey, taste, autonomy, mức sẵn sàng, task type feature, outer loop).
 - [x] Thiết kế Outer Loop `docs/06-the-outer-loop.md`.
 - [x] Thiết kế hai điểm xuất phát `docs/05-starting-points.md`.
 - [x] Khung `playbooks/tech-lead-taste.md`.
 - [x] Khởi tạo git repo: github.com/ThangLuuQuoc/Proofline.
+- [x] Khung gói Python `proofline` (uv): CLI, đọc/kiểm tra config, chọn model theo vai trò, mức tự chủ hiệu lực, schema `state/proofline.db`, test và CI.
 - [ ] Chọn 1–2 repo đích; kiểm tra test suite và app khởi chạy được trong container.
-- [ ] Viết `proofline start` / `proofline assess` và đo mức sẵn sàng của repo đích.
-- [ ] Viết `proofline init` / `proofline doctor` / `proofline interview` và chạy shadow mode trên 3 issue.
+- [x] Viết `proofline assess` (12 tiêu chí R1–R4) và chạy thử trên một repo đích thật (Next.js + pnpm): đo đúng R0, test và app chạy được, thiếu Dockerfile/devcontainer để lên R1.
+- [x] Tách công cụ khỏi workspace của người dùng: `proofline workspace init`, config/playbook thành bản mẫu, đường dẫn tính theo vị trí `proofline.yaml`.
+- [ ] Viết `proofline start`.
+- [x] Viết `proofline start` / `proofline target add` (clone từ git URL, tự dò Node/Python/Go/Rust): bắt đầu bằng 2 lệnh.
+- [ ] Viết `proofline doctor` / `proofline interview` và chạy shadow mode trên 3 issue.
+- [x] Thiết kế tích hợp qua ACP với PandaCode (`docs/07-acp-pandacode.md`).
+- [ ] `proofline acp`: khung giao thức + luồng chỉ đọc (bước 1–2 của kế hoạch thử trong docs/07).
 - [ ] Đưa ít nhất 1 repo lên R2 (kiểm kê tính năng, characterization test, CI).
 - [ ] Thu thập 30–50 case cho `evals/golden-set/` (qua `proofline golden mine` / `proofline golden synth`).
 - [ ] Viết `src/eval_runner.py` và chạy baseline (Phase 0).

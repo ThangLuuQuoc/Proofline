@@ -2,7 +2,7 @@
 
 > Người dùng đến với Proofline từ một trong hai điểm: **một ý tưởng chưa có code**, hoặc **một repo đã có vài tính năng nhưng chưa nhiều test**. Cả hai đều thiếu thứ mà swarm cần để tự kiểm chứng (test, CI, lịch sử bug, lịch sử review). Tài liệu này mô tả cách hệ thống **đưa repo lên dần các mức sẵn sàng** trước, rồi mới cho swarm sửa và tự quyết nhiều hơn.
 >
-> Liên quan: [03-system-architecture.md](03-system-architecture.md) · [04-execution-plan.md](04-execution-plan.md) · [proofline.yaml](../config/proofline.yaml)
+> Liên quan: [03-system-architecture.md](03-system-architecture.md) · [04-execution-plan.md](04-execution-plan.md) · [proofline.yaml](../src/proofline/templates/proofline.yaml)
 
 ---
 
@@ -53,10 +53,11 @@ Hai luồng chỉ khác nhau ở **điểm vào**. Từ R1 trở đi, cả hai �
 
 | Lệnh | Việc làm | Dùng ở |
 | :--- | :--- | :--- |
-| `proofline start` | Một cửa vào: tự nhận biết repo trống / chỉ có tài liệu ý tưởng hay đã có code, rồi đi vào luồng A hoặc B | Lần đầu |
+| `proofline start <git-url \| đường dẫn>` | Một cửa vào: tạo workspace nếu cần, thêm repo đích (clone + tự dò cấu hình), đo mức sẵn sàng. *(Đã có cho luồng B; nhận biết repo trống để vào luồng A: sắp có)* | Lần đầu |
+| `proofline target add <git-url \| đường dẫn>` | Clone repo vào `repos/<tên>/` (hoặc dùng thư mục có sẵn), tự dò stack/lệnh/`app_runtime`/`journeys_dir`, ghi `targets/<tên>/target.yaml` | Thêm repo đích |
 | `proofline assess` | Đo mức sẵn sàng R0–R4, liệt kê tiêu chí còn thiếu và việc cần làm để lên mức tiếp theo | Lần đầu, sau đó mỗi đêm |
 | `proofline interview` | Phỏng vấn sản phẩm (chỉ luồng A) và gu (cả hai luồng) | Lần đầu, chạy lại khi muốn chỉnh gu |
-| `proofline init` / `proofline doctor` | Dò và kiểm tra lệnh test/lint, `app_runtime`, container, GitHub App, branch protection | Luồng B; luồng A sau walking skeleton |
+| `proofline doctor` | Kiểm tra container, GitHub App, branch protection (việc dò lệnh đã nằm trong `target add`) | Luồng B; luồng A sau walking skeleton |
 | `proofline golden mine` | Đào case Golden Set từ lịch sử bug thật | Khi repo có lịch sử |
 | `proofline golden synth` | Sinh case Golden Set synthetic bằng cách cấy lỗi | Khi lịch sử bug quá ít |
 | `proofline taste mine` | Đọc lịch sử review PR để đề xuất nguyên tắc gu | Khi repo có lịch sử review |
@@ -88,14 +89,35 @@ Hai luồng chỉ khác nhau ở **điểm vào**. Từ R1 trở đi, cả hai �
 
 **Nguyên tắc:** trước khi sửa gì, **làm cho repo kiểm chứng được**.
 
+**Không đụng vào file có sẵn của repo khi chuẩn hóa:**
+- Mọi file Proofline sinh ra nằm trong **thư mục artifacts**: mặc định `<repo>/.proofline/` (đi qua PR, cùng phiên bản với code); hoặc `<workspace>/targets/<tên repo>/` nếu khai báo `artifacts_location: workspace` cho team không muốn có file Proofline trong repo.
+- Tài liệu có sẵn của repo (vd `docs/FEATURES.md`) chỉ là **nguồn để đọc**, không bao giờ bị sửa hay ghi đè, kể cả khi trùng tên khác hoa thường trên Windows/macOS.
+- Kịch bản người dùng mới chỉ **thêm file mới** vào `journeys_dir`, chọn chỗ bộ chạy test của repo tìm thấy (vd repo dùng Playwright với `testDir: ./e2e` thì `journeys_dir: e2e/journeys`).
+- Mọi thay đổi trong repo đích đi qua nhánh `proofline/*` trong worktree riêng rồi mở PR; bản checkout người dùng đang làm việc không bị thay đổi.
+
 | Bước | Agent làm | Người làm | Đầu ra |
 | :--- | :--- | :--- | :--- |
-| 1. Đánh giá | `proofline assess`: độ phủ test, CI, app có chạy trong sandbox không, tài liệu; `proofline init`/`doctor` dò cấu hình | Xác nhận cấu hình dò được | Báo cáo mức sẵn sàng + danh sách việc để lên mức |
+| 1. Đánh giá | `proofline assess`: độ phủ test, CI, app có chạy trong sandbox không, tài liệu; `proofline target add` dò cấu hình, `proofline doctor` kiểm tra môi trường | Xác nhận cấu hình dò được | Báo cáo mức sẵn sàng + danh sách việc để lên mức |
 | 2. Phỏng vấn gu | Phỏng vấn gu (mục 6); rút thêm quy ước từ code hiện có và `proofline taste mine` nếu có lịch sử review | Trả lời | Bản nháp `tech-lead-taste.md` |
-| 3. Kiểm kê tính năng ngược | Đọc code, liệt kê tính năng hiện có và hành vi quan sát được | **Xác nhận / sửa danh sách** | `docs/features.md` trong repo đích |
+| 3. Kiểm kê tính năng ngược | Đọc code, liệt kê tính năng hiện có và hành vi quan sát được | **Xác nhận / sửa danh sách** | `.proofline/features.md` (tài liệu tính năng có sẵn chỉ là nguồn đọc) |
 | 4. Khóa hành vi | Viết **characterization test** (ghi lại hành vi hiện tại) và kịch bản người dùng cho từng tính năng; dựng CI, devcontainer, `app_runtime` | Review PR | Repo lên **R2** |
 | 5. Golden Set | `proofline golden mine` nếu đủ bug lịch sử; nếu không, `proofline golden synth` (mục 8) | Chọn case | Repo lên **R3** khi đủ case và có baseline |
 | 6. Vòng chạy bình thường | Như kế hoạch chính | | |
+
+**Định dạng danh sách tính năng** (`features.md` trong thư mục artifacts, tên file đổi được qua `onboarding.existing_repo_track.feature_inventory_file`). `proofline assess` chỉ đọc file này để đo tỷ lệ tính năng có kịch bản người dùng; nếu chưa có, assess báo tài liệu tính năng gốc tìm được trong repo (các file `.md` có chữ "feature" ở gốc hoặc `docs/`) để dùng làm nguồn cho `proofline features draft`:
+
+```markdown
+<!-- proofline:confirmed -->   ← người thêm dòng này sau khi rà danh sách
+
+### F-1: Đăng nhập bằng email
+Mô tả hành vi quan sát được...
+journey: `tests/journeys/login.spec.ts`
+
+### F-2: Tạo agent mới
+journey: `tests/journeys/create-agent.spec.ts`
+```
+
+Mỗi tính năng là một tiêu đề `F-<số>`; dòng `journey:` trỏ tới file kịch bản người dùng (đường dẫn tính từ gốc repo, có thể là file mới trong `journeys_dir` hoặc test e2e có sẵn của repo). Tính năng chưa có dòng `journey:` (hoặc file chưa tồn tại) bị tính là chưa có kịch bản. Nên ghi thêm `source:` trỏ về đoạn tương ứng trong tài liệu gốc để người rà dễ đối chiếu.
 
 **Lưu ý về characterization test:** test này ghi lại hành vi *hiện tại*, kể cả hành vi sai. Khi agent phát hiện hành vi có vẻ là lỗi trong lúc viết, nó **không sửa** mà ghi vào digest dưới dạng đề xuất issue để người quyết.
 
@@ -182,7 +204,7 @@ Khi repo tụt mức sẵn sàng, Autonomy Controller hạ ngay các quyết đ�
 
 ## 10. Thứ tự xây dựng
 
-1. **Luồng B trước** (Phase 0–3): `proofline assess`, `proofline init`/`doctor`, phỏng vấn gu, kiểm kê tính năng, characterization test, `proofline golden mine`/`synth`. Luồng này dùng lại gần như toàn bộ verifier và cho kết quả đo được rõ ràng.
+1. **Luồng B trước** (Phase 0–3): `proofline start`/`target add`/`assess`, `proofline doctor`, phỏng vấn gu, kiểm kê tính năng, characterization test, `proofline golden mine`/`synth`. Luồng này dùng lại gần như toàn bộ verifier và cho kết quả đo được rõ ràng.
 2. **Task type `feature` + Acceptance Journey gate** cùng Verification Engine (Phase 2), vì cần cho cả hai luồng.
 3. **Luồng A** (Phase 4, cùng Lead Agent): phỏng vấn sản phẩm, spec, ADR, walking skeleton, cắt backlog. Luồng này cần Lead Agent và phần lớn quyết định vẫn do người, nên xây sau khi luồng B đã chạy ổn.
 

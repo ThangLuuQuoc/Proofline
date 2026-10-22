@@ -4,7 +4,7 @@
 >
 > **Outer Loop** (tài liệu này): nối Proofline với thế giới bên ngoài — khách hàng, team, production. Nó trả lời hai câu Inner Loop không trả lời được: *"nên làm gì?"* và *"làm xong có thật sự giải quyết vấn đề của người dùng không?"*.
 >
-> Liên quan: [03-system-architecture.md](03-system-architecture.md) · [04-execution-plan.md](04-execution-plan.md) (Phase 7) · [05-starting-points.md](05-starting-points.md) · [proofline.yaml](../config/proofline.yaml)
+> Liên quan: [03-system-architecture.md](03-system-architecture.md) · [04-execution-plan.md](04-execution-plan.md) (Phase 7) · [05-starting-points.md](05-starting-points.md) · [proofline.yaml](../src/proofline/templates/proofline.yaml)
 
 ---
 
@@ -96,7 +96,7 @@ Mọi nguồn được chuẩn hóa thành một bản ghi `signals` (schema ở
 
 ## 5. Module 3: Gom cụm & xếp ưu tiên
 
-* **Gom cụm nỗi đau:** các tín hiệu cùng triệu chứng được gom thành một `cluster`, kèm: tần suất trong cửa sổ (vd 7 ngày), số người bị ảnh hưởng, xu hướng tăng/giảm, mức nghiêm trọng, vùng tính năng (đối chiếu `docs/features.md`).
+* **Gom cụm nỗi đau:** các tín hiệu cùng triệu chứng được gom thành một `cluster`, kèm: tần suất trong cửa sổ (vd 7 ngày), số người bị ảnh hưởng, xu hướng tăng/giảm, mức nghiêm trọng, vùng tính năng (đối chiếu `.proofline/features.md`).
 * **Điểm ưu tiên** tính bằng code xác định từ các yếu tố trên, dùng để **sắp xếp gợi ý**, không phải để tự quyết.
 * **Người quyết thứ tự** (`priority_ranking`, bắt đầu ở L1). Khi thứ tự agent đề xuất khớp với người đủ nhiều lần thì mới được nâng mức, theo cơ chế nhật ký quyết định chung.
 
@@ -195,7 +195,7 @@ Các quyết định này dùng chung nhật ký `decisions`, cơ chế lên/xu�
 | :--- | :--- | :--- |
 | `cluster_id` | TEXT PK | |
 | `title`, `symptom` | TEXT | |
-| `feature_area` | TEXT | Đối chiếu `docs/features.md` |
+| `feature_area` | TEXT | Đối chiếu `.proofline/features.md` |
 | `first_seen`, `last_seen` | TEXT | |
 | `frequency_window`, `users_affected_window` | INTEGER | Trong cửa sổ cấu hình |
 | `priority_score` | REAL | Tính bằng code xác định |

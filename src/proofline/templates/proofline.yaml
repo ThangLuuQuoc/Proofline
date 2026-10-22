@@ -1,7 +1,9 @@
-# Proofline Configuration Settings
+# Proofline workspace config (proofline.yaml)
+# File này là MẪU đi kèm công cụ. `proofline workspace init <thư mục>` chép nó vào workspace của bạn;
+# mọi chỉnh sửa (repo đích, model, ngưỡng...) làm trên bản trong workspace, không sửa bản mẫu.
 version: "1.5"
 
-# Mọi đường dẫn bên dưới là tương đối so với thư mục gốc Proofline (workspace_root).
+# Mọi đường dẫn bên dưới là tương đối so với thư mục chứa file proofline.yaml này (workspace).
 factory:
   name: "Proofline Autonomous Engineering"
   workspace_root: "."
@@ -9,29 +11,32 @@ factory:
   log_dir: "logs"
   state_db: "state/proofline.db"
 
-# Repo đích mà swarm làm việc trên đó (khai báo theo từng repo).
-# `proofline init` tự dò các giá trị này từ CI/devcontainer/docker-compose, người xác nhận.
-target_repos:
-  - name: "example-service"          # TODO: thay bằng repo thật ở Phase 0
-    local_path: "../example-service"
-    default_branch: "main"
-    container_image: "example-service-dev:latest"
-    commands:
-      install: "pip install -e .[dev]"
-      test: "pytest -q"
-      lint: "ruff check ."
-      typecheck: "mypy ."
-    app_runtime:                     # Cách khởi chạy app trong sandbox cho User Journey gate
-      enabled: false                 # Bỏ trống/tắt → user_journey = not_applicable → không bao giờ tự merge
-      start_command: ""              # vd: "docker compose up -d app db"
-      seed_command: ""               # vd: "python manage.py loaddata fixtures/dev.json"
-      healthcheck_url: ""            # vd: "http://localhost:8000/health"
-      startup_timeout_seconds: 120
-      base_url: ""
-      journey_tools: ["http", "cli", "browser"]
-    model_overrides: {}              # Đổi model theo vai trò cho riêng repo này, vd: { heavy_coding: "claude-opus-5-5" }
+# Repo đích mà Proofline làm việc trên đó (khai báo theo từng repo).
+# Cách nhanh nhất: `proofline target add <git-url | đường dẫn>` tự clone, tự dò cấu hình và ghi vào
+# targets/<tên>/target.yaml (mỗi repo một file, không sửa file này). Cũng có thể khai báo thẳng dưới đây.
+target_repos: []
+# Ví dụ một repo Node + pnpm:
+#  - name: "my-app"
+#    local_path: "../my-app"          # Tương đối so với workspace, hoặc đường dẫn tuyệt đối
+#    default_branch: "main"
+#    commands:
+#      install: "pnpm install --frozen-lockfile"
+#      test: "pnpm test"
+#      lint: "pnpm lint"
+#      typecheck: "pnpm typecheck"
+#    app_runtime:                     # Cách khởi chạy app cho User Journey gate
+#      enabled: true                  # Tắt → user_journey = not_applicable → không bao giờ tự merge
+#      start_command: "pnpm dev"
+#      seed_command: ""               # vd: "pnpm db:push" khi cần schema
+#      healthcheck_url: "http://localhost:3000/"
+#      startup_timeout_seconds: 180
+#    journeys_dir: "e2e/journeys"     # Nơi thêm kịch bản người dùng mới (chỗ bộ chạy test của repo tìm thấy)
+#    artifacts_location: "repo"       # repo: <repo>/.proofline/ (qua PR) | workspace: <workspace>/targets/<tên repo>/
+#    model_overrides: {}              # vd: { heavy_coding: "claude-opus-5-5" }
 
 # Điểm xuất phát (docs/05-starting-points.md)
+# Nguyên tắc: Proofline không sửa file có sẵn của repo đích. Mọi file Proofline sinh ra nằm trong
+# thư mục artifacts (.proofline/ hoặc targets/<repo>/); kịch bản người dùng chỉ thêm file mới vào journeys_dir.
 # proofline start: repo trống / chỉ có tài liệu ý tưởng → luồng A (R0); đã có code → luồng B (R1)
 onboarding:
   starting_point: "auto"             # auto | idea | existing_repo
@@ -39,14 +44,14 @@ onboarding:
   interview:
     product_questions: true          # Chỉ dùng ở luồng A
     taste_questions: 12              # Số câu phỏng vấn gu (khoảng 10-15)
-    output_path: "docs/product/interview.md"   # Trong repo đích
+    output_file: "interview.md"      # Trong thư mục artifacts (.proofline/)
   idea_track:                        # Luồng A
     spec_path: "docs/product/spec.md"
     adr_dir: "docs/product/adr"
     acceptance_dir: "tests/journeys/acceptance"
     skeleton_workers: 1              # Walking skeleton chỉ dùng 1 worker
   existing_repo_track:               # Luồng B
-    feature_inventory_path: "docs/features.md"
+    feature_inventory_file: "features.md"   # Trong thư mục artifacts; tài liệu tính năng gốc của repo chỉ là nguồn đọc
     report_suspected_bugs_as_issues: true   # Hành vi có vẻ sai khi viết characterization test: đề xuất issue, không sửa
 
 # Mức sẵn sàng của repo (proofline assess đo tự động mỗi đêm). Ngưỡng là giá trị khởi điểm.
@@ -194,7 +199,7 @@ verification:
   baseline_from_base_commit: true       # Loại test vốn đã đỏ/chập chờn trên base khỏi regression
   allowed_new_static_warnings: 0        # Tính theo delta so với base, không đòi tuyệt đối 0
   user_journey:                         # Kiểm chứng như người dùng thật
-    scenarios_path: "tests/journeys"    # Trong repo đích; kịch bản được giữ lại làm test E2E hồi quy
+    # Thư mục kịch bản khai báo theo từng repo (target_repos[].journeys_dir); kịch bản được giữ lại làm test E2E hồi quy
     must_fail_on_base: true             # Phải fail ở bước khẳng định mục tiêu trên base_commit
     must_pass_after_fix: true
     fail_on_console_errors: true

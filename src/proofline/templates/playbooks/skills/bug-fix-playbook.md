@@ -26,7 +26,7 @@
 2. Chạy toàn bộ test suite cũ của dự án: Đảm bảo **Không có regression**.
 3. Chạy linter & typechecker: Đảm bảo **0 warning mới**.
 4. **Kiểm chứng như người dùng** (khi repo có `app_runtime` và lỗi ảnh hưởng hành vi người dùng):
-   - Viết kịch bản trong `tests/journeys/issue_<id>` diễn đạt mục tiêu người dùng trong issue: gọi API, chạy lệnh CLI, hoặc thao tác giao diện.
+   - Viết kịch bản mới trong `<journeys_dir>/issue_<id>` (khai báo theo repo, mặc định `tests/journeys/`) diễn đạt mục tiêu người dùng trong issue: gọi API, chạy lệnh CLI, hoặc thao tác giao diện.
    - Kịch bản phải có một **khẳng định mục tiêu** rõ ràng ở cuối; phải **fail trên bản lỗi** và **pass sau khi sửa**.
    - Không viết khẳng định lỏng chỉ để qua gate; harness sẽ tự chạy lại kịch bản và reviewer sẽ đối chiếu với issue.
 

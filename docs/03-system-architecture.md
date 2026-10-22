@@ -1,6 +1,6 @@
 # Thiết kế kiến trúc kỹ thuật Proofline v1.5
 
-> Tài liệu mô tả kiến trúc tầng, các khối thành phần, luồng dữ liệu, cơ chế phân tầng mô hình, kiểm chứng như người dùng thật, học "gu" Tech Lead, mức sẵn sàng của repo, bậc thang tự chủ và Outer Loop của hệ thống **Proofline**. Cấu hình tương ứng: [proofline.yaml](../config/proofline.yaml). Lộ trình triển khai: [04-execution-plan.md](04-execution-plan.md). Hai điểm xuất phát: [05-starting-points.md](05-starting-points.md). Outer Loop: [06-the-outer-loop.md](06-the-outer-loop.md).
+> Tài liệu mô tả kiến trúc tầng, các khối thành phần, luồng dữ liệu, cơ chế phân tầng mô hình, kiểm chứng như người dùng thật, học "gu" Tech Lead, mức sẵn sàng của repo, bậc thang tự chủ và Outer Loop của hệ thống **Proofline**. Cấu hình tương ứng: [proofline.yaml](../src/proofline/templates/proofline.yaml). Lộ trình triển khai: [04-execution-plan.md](04-execution-plan.md). Hai điểm xuất phát: [05-starting-points.md](05-starting-points.md). Outer Loop: [06-the-outer-loop.md](06-the-outer-loop.md).
 
 ---
 
@@ -128,7 +128,7 @@ graph TD
 
 * Mức sẵn sàng **có thể giảm** (CI đỏ quá 24 giờ, app không còn khởi chạy được); khi đó Autonomy Controller hạ ngay các quyết định vượt trần.
 * **Luồng A:** `proofline interview` (sản phẩm + gu) → spec với acceptance journey (**người duyệt**) → ADR (**người chọn**) → walking skeleton do một worker dựng (→ R1) → cắt backlog `type:feature`.
-* **Luồng B:** `proofline assess` + `proofline init`/`doctor` → `proofline interview` (gu) → kiểm kê tính năng ngược thành `docs/features.md` (**người xác nhận**) → characterization test, kịch bản người dùng, CI (→ R2) → Golden Set (→ R3).
+* **Luồng B:** `proofline start <git-url>` (tạo workspace, clone, tự dò cấu hình, `assess`) + `proofline doctor` → `proofline interview` (gu) → kiểm kê tính năng ngược thành `.proofline/features.md` (**người xác nhận**; tài liệu có sẵn của repo chỉ là nguồn đọc) → characterization test, kịch bản người dùng, CI (→ R2) → Golden Set (→ R3).
 * **Shadow mode** (cả hai luồng, khi đã có code): worker làm trong sandbox, không mở PR, gửi báo cáo buổi sáng.
 * Chi tiết đầy đủ ở [05-starting-points.md](05-starting-points.md).
 
@@ -187,7 +187,7 @@ Với `feature`, tiêu chí thành công được viết trước và do ngườ
 ### 2.7. User Journey Verification (kiểm chứng như người dùng thật)
 Test đơn vị xanh chưa chứng minh người dùng làm được việc họ cần. Gate này bắt agent tự đi hết luồng người dùng.
 
-* **Kịch bản người dùng:** agent viết trong `tests/journeys/` của repo đích, diễn đạt mục tiêu người dùng trong issue thành các bước và một **khẳng định mục tiêu** cuối cùng. Ba loại công cụ:
+* **Kịch bản người dùng:** agent viết trong `journeys_dir` của repo đích (mặc định `tests/journeys/`, chỉ thêm file mới), diễn đạt mục tiêu người dùng trong issue thành các bước và một **khẳng định mục tiêu** cuối cùng. Ba loại công cụ:
   - **HTTP:** gọi API end-to-end, kiểm tra status, payload, side effect (dữ liệu được ghi).
   - **CLI:** chạy lệnh, kiểm tra output và exit code.
   - **Browser (Playwright):** mở trang, bấm nút, điền form, đọc kết quả hiển thị.
@@ -292,7 +292,7 @@ Nối hệ thống với khách hàng, team và production. Chi tiết đầy đ
 - [x] **Static checks:** cảnh báo lint/typecheck không tăng so với base.
 
 ### 3. Bằng chứng người dùng (User Journey)
-- Kịch bản: `tests/journeys/issue_<id>.<ext>` (<HTTP | CLI | Browser>)
+- Kịch bản: `<journeys_dir>/issue_<id>.<ext>` (<HTTP | CLI | Browser>)
 - Mục tiêu người dùng: <mục tiêu lấy từ issue>
 - Trên base: FAIL tại bước <bước> · Sau khi sửa: PASS
 - Lỗi console / 5xx / exception mới: 0 · Thời gian phản hồi: <base> → <sau>
