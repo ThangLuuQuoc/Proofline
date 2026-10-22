@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS acp_sessions (
     session_id TEXT PRIMARY KEY,
     cwd        TEXT NOT NULL,
     repo       TEXT,
-    mode       TEXT NOT NULL DEFAULT 'ask',
+    mode       TEXT NOT NULL DEFAULT 'default',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

@@ -85,9 +85,9 @@ def test_initialize_and_new_session_announce_commands(ws):
     init, new, announce = messages
     assert init["result"]["protocolVersion"] == 1
     assert init["result"]["agentCapabilities"]["loadSession"] is True
-    assert new["result"]["modes"]["currentModeId"] == "ask"
+    assert new["result"]["modes"]["currentModeId"] == "default"
     # No mode that skips human decisions is advertised.
-    assert {m["id"] for m in new["result"]["modes"]["availableModes"]} == {"ask", "plan"}
+    assert {m["id"] for m in new["result"]["modes"]["availableModes"]} == {"default", "plan"}
     # Commands come after the response, so the client already knows the session id.
     assert announce["params"]["sessionId"] == new["result"]["sessionId"]
     assert announce["params"]["update"]["availableCommands"] == COMMANDS
@@ -158,13 +158,13 @@ def test_errors_never_stop_the_agent(ws):
         "{not json",
         rpc(1, "fs/whatever"),
         rpc(2, "session/prompt", {"sessionId": "nope", "prompt": []}),
-        rpc(3, "session/set_mode", {"sessionId": new_session(workspace, repo), "modeId": "full"}),
+        rpc(3, "session/set_mode", {"sessionId": new_session(workspace, repo), "modeId": "bypass"}),
         rpc(4, "initialize", {"protocolVersion": 1}),
     )
     assert messages[0]["error"]["code"] == -32700
     assert messages[1]["error"]["code"] == -32601
     assert messages[2]["error"]["code"] == -32002
-    assert messages[3]["error"]["code"] == -32602  # no "full" mode to switch into
+    assert messages[3]["error"]["code"] == -32602  # no "bypass" mode (Full access) to switch into
     assert messages[4]["result"]["protocolVersion"] == 1
 
 

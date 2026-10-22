@@ -27,7 +27,7 @@ from proofline.verify import git, load_manifest
 
 PROTOCOL_VERSION = 1
 MODES = [
-    {"id": "ask", "name": "Standard", "description": "Mọi quyết định của người đều hỏi trước."},
+    {"id": "default", "name": "Standard", "description": "Mọi quyết định của người đều hỏi trước."},
     {
         "id": "plan",
         "name": "Plan",
@@ -55,7 +55,7 @@ class Session:
     session_id: str
     cwd: Path
     repo: str | None
-    mode: str = "ask"
+    mode: str = "default"
 
 
 def _now() -> str:
