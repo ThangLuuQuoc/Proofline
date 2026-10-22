@@ -20,8 +20,19 @@ from proofline.config import (
     resolve_model,
 )
 from proofline.levels import READINESS_LEVELS, ReadinessLevel
-from proofline.state import SchemaVersionError, init_db, table_names
+from proofline.state import SchemaVersionError, init_db, record_human_decision, table_names
 from proofline.targets import AddedTarget, add_target, is_git_url
+from proofline.verify import (
+    JourneyApproval,
+    VerifyContext,
+    blob_of,
+    git,
+    load_manifest,
+    repo_root,
+    save_manifest,
+    verify,
+    write_report,
+)
 from proofline.workspace import WorkspaceExistsError, init_workspace
 
 app = typer.Typer(help="Proofline: xưởng phần mềm nơi mọi thay đổi đều có bằng chứng.")
@@ -30,7 +41,9 @@ autonomy_app = typer.Typer(help="Xem mức tự chủ hiệu lực.")
 db_app = typer.Typer(help="Quản lý state/proofline.db.")
 workspace_app = typer.Typer(help="Tạo workspace (config, state, playbook) tách khỏi công cụ.")
 target_app = typer.Typer(help="Thêm và xem repo đích.")
+spec_app = typer.Typer(help="Spec và acceptance journey của một task.")
 app.add_typer(target_app, name="target")
+app.add_typer(spec_app, name="spec")
 app.add_typer(config_app, name="config")
 app.add_typer(autonomy_app, name="autonomy")
 app.add_typer(db_app, name="db")
@@ -328,3 +341,131 @@ def start(
         f"\nLần sau, chạy các lệnh trong {workspace.resolve()}"
         f" (vd `proofline assess {added.name} --run`)."
     )
+
+
+SpecArgument = Annotated[
+    Path, typer.Argument(help="Manifest của spec, vd .proofline/specs/<tên>.yaml.")
+]
+PathOption = Annotated[
+    Path | None,
+    typer.Option("--path", help="Checkout của nhánh cần kiểm (mặc định: repo chứa manifest)."),
+]
+
+
+def _fail(exc: Exception) -> typer.Exit:
+    typer.secho(str(exc), fg=typer.colors.RED, err=True)
+    return typer.Exit(code=2)
+
+
+def _target_for(cfg: ProoflineConfig, candidate: Path, name: str | None):
+    """Repo đích của một checkout: theo --repo, hoặc cùng kho git (worktree cũng tính)."""
+    if name:
+        return cfg.target_repo(name)
+    common = Path(
+        git(["rev-parse", "--path-format=absolute", "--git-common-dir"], candidate)
+    ).resolve()
+    for target in cfg.target_repos:
+        local = (cfg.workspace / target.local_path).resolve()
+        if not local.is_dir():
+            continue
+        try:
+            other = git(["rev-parse", "--path-format=absolute", "--git-common-dir"], local)
+        except ConfigError:
+            continue
+        if Path(other).resolve() == common:
+            return target
+    if len(cfg.target_repos) == 1:
+        return cfg.target_repos[0]
+    raise ConfigError(f"không xác định được repo đích của {candidate}; dùng --repo")
+
+
+@spec_app.command("approve")
+def spec_approve(
+    spec: SpecArgument,
+    note: Annotated[str, typer.Option(help="Ghi chú của người duyệt.")] = "",
+    path: PathOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Ghi nhận người duyệt journey hiện tại: lưu git blob vào manifest và vào bảng decisions."""
+    try:
+        manifest = load_manifest(spec)
+        candidate = repo_root(path or spec.parent)
+        blob = blob_of(candidate, manifest.journey)
+    except ConfigError as exc:
+        raise _fail(exc) from exc
+    if manifest.approved_blob == blob:
+        typer.echo(f"Journey đã được duyệt ở bản này ({blob[:7]}).")
+        return
+    from datetime import UTC, datetime
+
+    manifest.journey_approvals.append(
+        JourneyApproval(
+            blob=blob, approved_at=datetime.now(UTC).isoformat(timespec="seconds"), note=note
+        )
+    )
+    save_manifest(spec, manifest)
+    typer.secho(f"Đã duyệt journey {manifest.journey} ({blob[:7]}).", fg=typer.colors.GREEN)
+    try:
+        cfg = load_config(config)
+    except ConfigError:
+        typer.echo("(Không tìm thấy workspace: chưa ghi vào bảng decisions.)")
+        return
+    record_human_decision(
+        cfg.workspace / cfg.factory.state_db,
+        "acceptance_approval",
+        f"approved {manifest.name} {blob[:7]}",
+        note,
+    )
+
+
+@app.command("verify")
+def verify_cmd(
+    spec: SpecArgument,
+    path: PathOption = None,
+    repo: Annotated[
+        str | None, typer.Option(help="Tên repo đích (mặc định: tự nhận theo kho git).")
+    ] = None,
+    runs: Annotated[int, typer.Option(min=1, max=5, help="Số lượt chạy cả bộ test mỗi bên.")] = 2,
+    install: Annotated[
+        bool, typer.Option("--install/--no-install", help="Chạy commands.install trước.")
+    ] = True,
+    config: ConfigOption = None,
+) -> None:
+    """Chạy các gate của một task trên nhánh, so với base; ghi báo cáo vào thư mục artifacts."""
+    cfg = _load(config)
+    try:
+        manifest = load_manifest(spec)
+        candidate = repo_root(path or spec.parent)
+        target = _target_for(cfg, candidate, repo)
+        ctx = VerifyContext(
+            config=cfg,
+            target=target,
+            candidate=candidate,
+            manifest=manifest,
+            runs=runs,
+            install=install,
+            log=lambda msg: typer.echo(f"· {msg}"),
+        )
+        report = verify(ctx)
+    except ConfigError as exc:
+        raise _fail(exc) from exc
+    typer.echo("")
+    typer.echo(report.to_markdown())
+    md, js = write_report(report, target.artifacts_dir(candidate, cfg.workspace) / "verify")
+    typer.echo(f"Báo cáo: {md}\n        {js}")
+    if report.status == "fail":
+        raise typer.Exit(code=1)
+
+
+@app.command("acp")
+def acp_cmd(
+    workspace: Annotated[
+        Path | None,
+        typer.Option("--workspace", "-w", help="Thư mục workspace (chứa proofline.yaml)."),
+    ] = None,
+    config: ConfigOption = None,
+) -> None:
+    """Chạy Proofline như một agent ACP qua stdio (cho PandaCode và các client ACP khác)."""
+    from proofline.acp import serve_stdio
+
+    serve_stdio(config or (workspace / CONFIG_FILENAME if workspace else None))

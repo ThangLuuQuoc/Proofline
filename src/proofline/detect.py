@@ -75,6 +75,8 @@ def _package_manager(repo: Path) -> str:
     return "npm"
 
 
+EXEC = {"pnpm": "pnpm exec", "yarn": "yarn", "bun": "bunx", "npm": "npx"}
+
 INSTALL = {
     "pnpm": "pnpm install --frozen-lockfile",
     "yarn": "yarn install --frozen-lockfile",
@@ -108,6 +110,13 @@ def _detect_node(repo: Path, result: Detection) -> None:
         if name in scripts:
             commands["typecheck"] = f"{run} {name}"
             break
+    if "vitest" in deps:
+        # Kết quả từng test cho `proofline verify` ({files} trống = cả bộ test).
+        commands["test_junit"] = (
+            f"{EXEC[pm]} vitest run {{files}} --reporter=junit --outputFile={{junit}}"
+        )
+    elif "jest" in deps:
+        result.notes.append("jest cần gói jest-junit để `proofline verify` đọc kết quả từng test")
     result.commands = commands
 
     script_name = "dev" if "dev" in scripts else ("start" if "start" in scripts else None)
@@ -154,6 +163,7 @@ def _detect_python(repo: Path, result: Detection) -> None:
     commands = {"install": install}
     if "pytest" in text or (repo / "tests").is_dir() or (repo / "pytest.ini").is_file():
         commands["test"] = f"{prefix}pytest -q"
+        commands["test_junit"] = f"{prefix}pytest -q --junitxml={{junit}} {{files}}"
     else:
         result.notes.append("không thấy pytest")
     if "ruff" in text:

@@ -24,6 +24,7 @@ target_repos: []
 #      test: "pnpm test"
 #      lint: "pnpm lint"
 #      typecheck: "pnpm typecheck"
+#      test_junit: "pnpm exec vitest run {files} --reporter=junit --outputFile={junit}"  # cho proofline verify
 #    app_runtime:                     # Cách khởi chạy app cho User Journey gate
 #      enabled: true                  # Tắt → user_journey = not_applicable → không bao giờ tự merge
 #      start_command: "pnpm dev"

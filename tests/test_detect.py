@@ -26,7 +26,7 @@ def test_node_pnpm_next_with_port_and_playwright(tmp_path):
             "lint": "eslint",
             "typecheck": "tsc --noEmit",
         },
-        {"next": "15.2.1"},
+        {"next": "15.2.1", "vitest": "5.0.2"},
     )
     write(repo / "playwright.config.ts", "export default defineConfig({ testDir: './e2e' })")
     result = detect(repo)
@@ -36,6 +36,7 @@ def test_node_pnpm_next_with_port_and_playwright(tmp_path):
         "test": "pnpm test",
         "lint": "pnpm lint",
         "typecheck": "pnpm typecheck",
+        "test_junit": "pnpm exec vitest run {files} --reporter=junit --outputFile={junit}",
     }
     assert result.app_runtime["start_command"] == "pnpm dev"
     assert result.app_runtime["healthcheck_url"] == "http://localhost:3200/"
@@ -73,6 +74,7 @@ def test_python_uv_project(tmp_path):
     assert result.commands == {
         "install": "uv sync",
         "test": "uv run pytest -q",
+        "test_junit": "uv run pytest -q --junitxml={junit} {files}",
         "lint": "uv run ruff check .",
         "typecheck": "uv run mypy .",
     }

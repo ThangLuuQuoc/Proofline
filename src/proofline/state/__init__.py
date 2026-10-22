@@ -6,7 +6,7 @@ import sqlite3
 from importlib.resources import files
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class SchemaVersionError(Exception):
@@ -43,3 +43,35 @@ def table_names(conn: sqlite3.Connection) -> list[str]:
         "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name"
     ).fetchall()
     return [row["name"] for row in rows]
+
+
+def record_human_decision(
+    db_path: str | Path,
+    decision_type: str,
+    choice: str,
+    reason: str = "",
+    autonomy_level: str = "L1",
+) -> str:
+    """Ghi một quyết định do người đưa ra (vd duyệt journey) vào bảng decisions."""
+    import uuid
+    from datetime import UTC, datetime
+
+    decision_id = uuid.uuid4().hex
+    conn = init_db(db_path)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO decisions (decision_id, decision_type, autonomy_level, human_choice,"
+                " human_reason, decided_by, created_at) VALUES (?, ?, ?, ?, ?, 'human', ?)",
+                (
+                    decision_id,
+                    decision_type,
+                    autonomy_level,
+                    choice,
+                    reason,
+                    datetime.now(UTC).isoformat(timespec="seconds"),
+                ),
+            )
+    finally:
+        conn.close()
+    return decision_id

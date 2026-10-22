@@ -1,4 +1,4 @@
--- Schema state/proofline.db (phiên bản 1).
+-- Schema state/proofline.db (phiên bản 2; v2 thêm acp_sessions, chỉ thêm bảng nên DB v1 nâng cấp tại chỗ).
 -- Mô tả cột: docs/04-execution-plan.md (runs, tasks, decisions, readiness_snapshots)
 -- và docs/06-the-outer-loop.md (signals, clusters).
 -- Cột JSON lưu dạng TEXT; thời gian lưu ISO 8601 (UTC).
@@ -111,3 +111,14 @@ CREATE TABLE IF NOT EXISTS signals (
     cluster_id       TEXT REFERENCES clusters (cluster_id)
 );
 CREATE INDEX IF NOT EXISTS idx_signals_cluster ON signals (cluster_id);
+
+-- v2: phiên ACP (docs/07-acp-pandacode.md). Client mở một tiến trình mỗi lượt, nên phiên phải
+-- nạp lại được từ DB.
+CREATE TABLE IF NOT EXISTS acp_sessions (
+    session_id TEXT PRIMARY KEY,
+    cwd        TEXT NOT NULL,
+    repo       TEXT,
+    mode       TEXT NOT NULL DEFAULT 'ask',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);

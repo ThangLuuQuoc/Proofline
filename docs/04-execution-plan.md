@@ -453,7 +453,8 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 - [x] Viết `proofline start` / `proofline target add` (clone từ git URL, tự dò Node/Python/Go/Rust): bắt đầu bằng 2 lệnh.
 - [ ] Viết `proofline doctor` / `proofline interview` và chạy shadow mode trên 3 issue.
 - [x] Thiết kế tích hợp qua ACP với PandaCode (`docs/07-acp-pandacode.md`).
-- [ ] `proofline acp`: khung giao thức + luồng chỉ đọc (bước 1–2 của kế hoạch thử trong docs/07).
+- [x] `proofline verify` (gate runner) + `proofline spec approve`: tự động hóa các gate đã làm tay ở lần chạy thử đầu tiên; regression so danh sách test fail qua nhiều lượt; baseline trên bản clone riêng.
+- [x] `proofline acp`: khung giao thức + luồng chỉ đọc `/assess`, `/status` (bước 1–2 của kế hoạch thử trong docs/07; đã kiểm bằng client giả lập, chưa chạy trong PandaCode).
 - [ ] Đưa ít nhất 1 repo lên R2 (kiểm kê tính năng, characterization test, CI).
 - [ ] Thu thập 30–50 case cho `evals/golden-set/` (qua `proofline golden mine` / `proofline golden synth`).
 - [ ] Viết `src/eval_runner.py` và chạy baseline (Phase 0).
