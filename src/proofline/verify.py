@@ -464,8 +464,12 @@ def gate_static(ctx: VerifyContext, base: Path, name: str) -> Gate | None:
     before = ctx.runner(command, base, COMMAND_TIMEOUT)
     if TOOL_BROKEN.search(head.output_tail) or TOOL_BROKEN.search(before.output_tail):
         both = not before.ok
+        # Show the line that says why the tool cannot run, not the package manager's exit note.
         lines = head.output_tail.strip().splitlines()
-        last = lines[-1][:160] if lines else ""
+        cause = next(
+            (line for line in lines if TOOL_BROKEN.search(line)), lines[-1] if lines else ""
+        )
+        last = cause.strip()[:160]
         return Gate(
             f"static_{name}",
             "unknown",
