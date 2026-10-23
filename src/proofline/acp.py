@@ -30,6 +30,7 @@ from proofline import __version__
 from proofline.assess import AssessContext, assess, find_source_feature_docs, save_snapshot
 from proofline.config import ConfigError, ProoflineConfig, TargetRepo, load_config
 from proofline.state import append_decision_reason, connect, init_db, record_decision
+from proofline.targets import add_target
 from proofline.verify import (
     JourneyApproval,
     SpecManifest,
@@ -53,6 +54,11 @@ MODES = [
     },
 ]
 COMMANDS = [
+    {
+        "name": "init",
+        "description": "Đăng ký thư mục này làm repo đích (chỉ ghi vào workspace), rồi assess.",
+        "input": {"hint": "[tên repo] [--git-init]"},
+    },
     {"name": "assess", "description": "Đo mức sẵn sàng R0–R4 của repo này (kiểm tra tĩnh)."},
     {"name": "status", "description": "Repo, mức sẵn sàng gần nhất, các spec và kết quả verify."},
     {
@@ -86,6 +92,17 @@ APPROVE_OPTIONS = [
     {"optionId": "approve_note", "name": "Duyệt, có góp ý", "kind": "allow_once"},
     {"optionId": "reject", "name": "Từ chối", "kind": "reject_once"},
 ]
+GIT_INIT_OPTIONS = [
+    {"optionId": "git_init", "name": "Khởi tạo git (nhánh main)", "kind": "allow_once"},
+    {
+        "optionId": "git_init_commit",
+        "name": "Khởi tạo git + commit rỗng đầu tiên",
+        "kind": "allow_once",
+    },
+    {"optionId": "cancel", "name": "Không", "kind": "reject_once"},
+]
+# Thư mục chỉ có các file này vẫn coi là trống.
+IGNORABLE_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 RUN_OPTIONS = [
     {"optionId": "run", "name": "Chạy verify", "kind": "allow_once"},
     {"optionId": "run_quick", "name": "Chạy nhanh (1 lượt, không cài lại)", "kind": "allow_once"},
@@ -416,6 +433,7 @@ class AcpServer:
         command, _, rest = text.partition(" ")
         rest = rest.strip()
         handlers = {
+            "init": lambda: self.cmd_init(session, rest),
             "assess": lambda: self.cmd_assess(session),
             "status": lambda: self.cmd_status(session),
             "spec": lambda: self.cmd_spec(session, rest),
@@ -849,20 +867,164 @@ class AcpServer:
         )
         self.say(sid, report.to_markdown() + f"\nBáo cáo: `{md}`")
 
+    # ---- init ----
+
+    def cmd_init(self, session: Session, args: str) -> None:
+        """Đăng ký thư mục của phiên làm repo đích: chỉ ghi `targets/<tên>/target.yaml` trong
+        workspace. Thư mục trống thì hỏi `git init` trước (việc duy nhất chạm vào thư mục)."""
+        sid = session.session_id
+        words = args.split()
+        typed_git_init = "--git-init" in words
+        names = [w for w in words if not w.startswith("--")]
+        existing = self._resolve_target(session)
+        if existing is not None:
+            self.say(
+                sid,
+                f"Thư mục này đã là repo đích `{existing.name}` của workspace. Dùng `/assess`"
+                " hoặc `/status`.",
+            )
+            return
+        branch = None
+        try:
+            root = Path(git(["rev-parse", "--show-toplevel"], session.cwd)).resolve()
+        except ConfigError:
+            root = None
+        if root is None:
+            entries = (
+                [p for p in session.cwd.iterdir() if p.name not in IGNORABLE_FILES]
+                if session.cwd.is_dir()
+                else None
+            )
+            if entries is None:
+                self.say(sid, f"❌ Không thấy thư mục `{session.cwd}`.")
+                return
+            if entries:
+                self.say(
+                    sid,
+                    f"Thư mục `{session.cwd}` chưa phải repo git và đã có file. Proofline không tự"
+                    " khởi tạo git trên thư mục đang có nội dung của bạn: chạy `git init` (và"
+                    " commit nếu muốn) rồi gõ lại `/init`.",
+                )
+                return
+            branch = self._git_init(session, typed=typed_git_init)
+            if branch is None:
+                return
+            root = session.cwd
+        self._register(session, root, names[0] if names else None, branch)
+
+    def _git_init(self, session: Session, *, typed: bool = False) -> str | None:
+        """Hỏi rồi `git init` thư mục trống; trả về tên nhánh, None nếu không khởi tạo.
+        `typed`: người đã gõ `/init --git-init` nên không cần hỏi lại."""
+        sid = session.session_id
+        if session.mode == "plan":
+            self.say(sid, "Chế độ Plan chỉ đọc: không khởi tạo git ở đây. Chuyển sang Standard.")
+            return None
+        if typed:
+            return self._do_git_init(session, "git_init", "[lệnh /init --git-init]")
+        content = [
+            {
+                "type": "content",
+                "content": {
+                    "type": "text",
+                    "text": (
+                        f"`{session.cwd}` đang trống và chưa phải repo git. Proofline làm việc"
+                        " trên git (nhánh, worktree, so với base) nên cần `git init` ở đây. Đây"
+                        " là luồng khởi đầu từ ý tưởng (mức R0). Không tạo file nào khác."
+                    ),
+                },
+            }
+        ]
+        decision = self.ask(session, "Khởi tạo git cho project mới", content, GIT_INIT_OPTIONS)
+        if decision.suspected_auto:
+            self._guard_refused(session, "git_init", decision, "/init --git-init")
+            return None
+        if not decision.allowed:
+            self.say(sid, "Không khởi tạo git; chưa đăng ký repo.")
+            return None
+        return self._do_git_init(
+            session, decision.option, f"[thanh duyệt, {decision.seconds:.1f}s]"
+        )
+
+    def _do_git_init(self, session: Session, option: str, reason: str) -> str | None:
+        sid = session.session_id
+        record_decision(
+            self.db_path,
+            "git_init",
+            decided_by="human",
+            human_choice=f"{option} {session.cwd}",
+            human_reason=reason,
+        )
+        try:
+            git(["init", "-q", "-b", "main"], session.cwd)
+        except ConfigError as exc:
+            self.say(sid, f"❌ {exc}")
+            return None
+        lines = [f"✅ Đã `git init` (nhánh `main`) ở `{session.cwd}`."]
+        if option == "git_init_commit":
+            try:
+                git(["commit", "-q", "--allow-empty", "-m", "Khởi tạo project"], session.cwd)
+                lines.append("✅ Đã tạo commit rỗng đầu tiên.")
+            except ConfigError as exc:
+                lines.append(
+                    f"⚠️ Chưa tạo được commit đầu tiên ({exc}). Thường do git chưa có"
+                    " `user.name`/`user.email`; repo vẫn dùng được."
+                )
+        self.say(sid, "\n".join(lines))
+        return "main"
+
+    def _register(self, session: Session, root: Path, name: str | None, branch: str | None) -> None:
+        sid = session.session_id
+        try:
+            added = add_target(self.config, str(root), name=name, branch=branch)
+        except ConfigError as exc:
+            self.say(sid, f"❌ Chưa đăng ký được: {exc}. Đặt tên khác bằng `/init <tên>`.")
+            return
+        record_decision(
+            self.db_path,
+            "register_target",
+            decided_by="human",
+            human_choice=f"init {added.name} {root}",
+            human_reason="[lệnh /init]",
+        )
+        self._config = None  # đọc lại workspace để thấy repo vừa thêm
+        session.repo = added.name
+        self._save(session)
+        detection = added.detection
+        lines = [
+            f"✅ Đã đăng ký repo đích `{added.name}` (stack {detection.stack}).",
+            f"- Cấu hình: `{added.target_file}` (trong workspace; repo của bạn không bị sửa).",
+        ]
+        if detection.commands:
+            lines.append("- Lệnh dò được: " + ", ".join(f"`{k}`" for k in detection.commands))
+        lines += [f"- Lưu ý: {note}" for note in detection.notes]
+        lines.append("Hãy xem lại file cấu hình trước khi chạy lệnh của repo. Giờ đo mức sẵn sàng:")
+        self.say(sid, "\n".join(lines))
+        self.cmd_assess(session)
+
     # ---- read-only commands ----
 
-    def _require_repo(self, session: Session) -> TargetRepo | None:
+    def _resolve_target(self, session: Session) -> TargetRepo | None:
         if session.repo:
             try:
                 return self.config.target_repo(session.repo)
             except ConfigError:
                 pass
-        self.say(
-            session.session_id,
-            f"Thư mục `{session.cwd}` chưa thuộc repo đích nào của workspace. "
-            f"Thêm bằng: `proofline target add {session.cwd}`.",
-        )
-        return None
+        # The repo may have been added after the session started (CLI, another session).
+        target = self.target_for(session.cwd)
+        if target is not None:
+            session.repo = target.name
+            self._save(session)
+        return target
+
+    def _require_repo(self, session: Session) -> TargetRepo | None:
+        target = self._resolve_target(session)
+        if target is None:
+            self.say(
+                session.session_id,
+                f"Thư mục `{session.cwd}` chưa thuộc repo đích nào của workspace. Gõ `/init` để"
+                " đăng ký (chỉ ghi vào workspace).",
+            )
+        return target
 
     def cmd_help(self, session: Session) -> None:
         lines = ["Lệnh Proofline:"] + [f"- `/{c['name']}`: {c['description']}" for c in COMMANDS]

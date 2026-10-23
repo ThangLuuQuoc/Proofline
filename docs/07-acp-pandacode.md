@@ -233,8 +233,8 @@ uv run --project "<đường dẫn repo Proofline>" proofline %* --workspace "<t
 ```
 
 1. Đặt file trên vào một thư mục trong `PATH` (vd `<workspace>/bin`, rồi thêm thư mục này vào `PATH` của người dùng) và khởi động lại PandaCode.
-2. Trong PandaCode: mở repo đích như một project, chọn agent **Command Code**, chế độ **Standard**.
-3. Gõ `/assess`, `/status`, `/spec`, `/verify` (xem mục 7.2).
+2. Trong PandaCode: mở repo đích như một project (**Open project** với thư mục có sẵn, hoặc **Clone to this computer** ở GitHub hub), chọn agent **Command Code**, chế độ **Standard**.
+3. Gõ `/init` để đăng ký repo với workspace (lần đầu), rồi `/assess`, `/status`, `/spec`, `/verify` (xem mục 7.2).
 
 **Lưu ý:**
 - Giao diện vẫn hiện chữ "Command Code"; đó là tên của provider bị mượn, không phải Proofline.
@@ -246,6 +246,7 @@ uv run --project "<đường dẫn repo Proofline>" proofline %* --workspace "<t
 
 | Lệnh | Việc | Quyết định ghi vào `decisions` |
 | :--- | :--- | :--- |
+| `/init [tên] [--git-init]` | Đăng ký thư mục đang mở làm repo đích: tự dò stack và lệnh, chỉ ghi `targets/<tên>/target.yaml` trong workspace (repo không bị sửa), rồi chạy `/assess`. Mở từ thư mục con thì đăng ký gốc repo. Thư mục **trống** chưa có git (luồng khởi đầu từ ý tưởng): hỏi **Khởi tạo git (nhánh main)** / **Khởi tạo git + commit rỗng đầu tiên** / **Không**; gõ `--git-init` thì không hỏi. Thư mục **đã có file** mà chưa có git: không tự `git init`, chỉ hướng dẫn. Không `git init` ở chế độ Plan | `register_target`; `git_init` |
 | `/spec [tên]` | Hiện spec, journey, lịch sử duyệt. Nếu journey chưa duyệt hoặc đã đổi sau lần duyệt: gửi `tool_call` có khối `diff` (bản đã duyệt → bản hiện tại) rồi `session/request_permission` với **Duyệt** (`allow_once`), **Duyệt, có góp ý** (`allow_once`), **Từ chối** (`reject_once`) | `acceptance_approval`, `decided_by='human'`; duyệt thì thêm một mục vào `journey_approvals` của spec |
 | Tin nhắn kế tiếp | Sau "Duyệt, có góp ý" hoặc "Từ chối", Proofline hỏi góp ý / lý do; tin nhắn không bắt đầu bằng `/` ở lượt sau là câu trả lời (câu hỏi lưu ở bảng `acp_pending` vì mỗi lượt là một tiến trình mới). Gõ một lệnh khác thì bỏ câu hỏi | Nối vào `human_reason` của quyết định vừa ghi |
 | `/approve [tên] [góp ý]`, `/reject [tên] <lý do>` | Đường bằng chữ. Người gõ lệnh nên không qua Decision Guard. Không ghi tên spec thì lấy spec duy nhất đang chờ duyệt | Như trên, kèm kênh `[lệnh /approve]` |
@@ -266,3 +267,4 @@ uv run --project "<đường dẫn repo Proofline>" proofline %* --workspace "<t
 2. PandaCode có tự liên kết PR do Proofline mở (không qua nút của PandaCode) với task không; nếu không, có nên đề xuất upstream.
 3. Có nên đề xuất upstream để task gắn với một agent ACP cụ thể **không được** mặc định Full access.
 4. Truy cập từ xa (relay) của PandaCode: tắt cho repo của công ty, hay cho phép với điều kiện nào.
+5. Tạo project trong PandaCode: hiện có **Open project** (thư mục bất kỳ) và **Clone to this computer** (chỉ GitHub, qua `gh`). Thiếu clone từ git URL bất kỳ (GitLab nội bộ…) và tạo project trống; đề xuất upstream cùng issue ở bước 6 thay vì sửa giao diện trong bản riêng. Trước mắt: `proofline start <url>` ở CLI rồi Open project, hoặc tạo thư mục trống, Open project rồi `/init`.

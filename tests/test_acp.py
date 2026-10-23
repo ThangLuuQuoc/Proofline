@@ -148,7 +148,7 @@ def test_unknown_folder_points_to_target_add(ws, tmp_path):
     text = updates(run_server(workspace, prompt(2, sid, "/assess")), "agent_message_chunk")[-1][
         "content"
     ]["text"]
-    assert "proofline target add" in text
+    assert "/init" in text
 
 
 def test_errors_never_stop_the_agent(ws):
@@ -185,5 +185,5 @@ def test_stdio_process_speaks_clean_json_lines(ws):
     messages = [json.loads(line) for line in raw.decode("utf-8").splitlines()]
     assert [m.get("id") for m in messages] == [1, 2, None]
     assert (
-        "Đo mức sẵn sàng" in messages[2]["params"]["update"]["availableCommands"][0]["description"]
+        "Đăng ký thư mục" in messages[2]["params"]["update"]["availableCommands"][0]["description"]
     )
