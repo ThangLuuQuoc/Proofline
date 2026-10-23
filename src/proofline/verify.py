@@ -132,6 +132,7 @@ class VerifyReport:
     runs: int
     gates: list[Gate]
     verified_at: str
+    installed: bool = False  # commands.install đã chạy trên cả hai bên
 
     @property
     def status(self) -> Status:
@@ -240,6 +241,7 @@ def _install(ctx: VerifyContext, cwd: Path, label: str) -> Gate | None:
         f"install_{label}",
         "unknown",
         f"'{command}' lỗi trên {label}: {result.output_tail.strip()[-200:]}",
+        {"command": command, "output": result.output_tail.strip()[-200:]},
     )
 
 
@@ -418,7 +420,15 @@ def gate_no_regression(ctx: VerifyContext, base: Path) -> Gate:
                     f" {result.output_tail.strip()[-200:]}",
                 )
             bucket.append(run)
-    groups = classify_regressions(base_runs, head_runs)
+    groups: dict = classify_regressions(base_runs, head_runs)
+    # What the base itself does, for the knowledge library (docs/08): always vs sometimes failing.
+    base_always = frozenset.intersection(*(r.failed_ids for r in base_runs))
+    base_some = frozenset().union(*(r.failed_ids for r in base_runs))
+    groups["base"] = {
+        "failed_per_run": [len(r.failed_ids) for r in base_runs],
+        "always_failing": sorted(base_always),
+        "unstable": sorted(base_some - base_always),
+    }
     counts = (
         f"base: {', '.join(str(len(r.failed_ids)) for r in base_runs)} fail · "
         f"nhánh: {', '.join(str(len(r.failed_ids)) for r in head_runs)} fail (theo lượt)"
@@ -453,6 +463,16 @@ def diagnostics(result: CommandResult) -> int:
     return sum(1 for line in result.output_tail.splitlines() if DIAGNOSTIC.search(line))
 
 
+def _broken_cause(output: str, checkout: Path) -> str:
+    """The line that says why the tool cannot run (not the package manager's exit note), with
+    the checkout's own path replaced so the text is the same wherever it ran."""
+    lines = output.strip().splitlines()
+    cause = next((line for line in lines if TOOL_BROKEN.search(line)), lines[-1] if lines else "")
+    for form in {str(checkout), str(checkout.resolve()), checkout.as_posix()}:
+        cause = cause.replace(form, "<repo>")
+    return cause.strip()[:160]
+
+
 def gate_static(ctx: VerifyContext, base: Path, name: str) -> Gate | None:
     command = ctx.target.commands.get(name)
     if not command:
@@ -464,26 +484,35 @@ def gate_static(ctx: VerifyContext, base: Path, name: str) -> Gate | None:
     before = ctx.runner(command, base, COMMAND_TIMEOUT)
     if TOOL_BROKEN.search(head.output_tail) or TOOL_BROKEN.search(before.output_tail):
         both = not before.ok
-        # Show the line that says why the tool cannot run, not the package manager's exit note.
-        lines = head.output_tail.strip().splitlines()
-        cause = next(
-            (line for line in lines if TOOL_BROKEN.search(line)), lines[-1] if lines else ""
-        )
-        last = cause.strip()[:160]
+        base_broken = both and bool(TOOL_BROKEN.search(before.output_tail))
+        last = _broken_cause(head.output_tail, ctx.candidate)
         return Gate(
             f"static_{name}",
             "unknown",
             f"'{command}' không chạy được{' (hỏng sẵn trên base)' if both else ''}: {last}",
+            {
+                "command": command,
+                "base": {
+                    "broken": base_broken,
+                    "cause": _broken_cause(before.output_tail, base) if base_broken else "",
+                },
+            },
         )
     if before.ok:
         return Gate(
             f"static_{name}",
             "fail",
             f"'{command}' sạch trên base nhưng lỗi trên nhánh ({diagnostics(head)} dòng)",
+            {"command": command, "base": {"broken": False, "diagnostics": 0}},
         )
     h, b = diagnostics(head), diagnostics(before)
     status: Status = "pass" if h <= b else "fail"
-    return Gate(f"static_{name}", status, f"{h} dòng lỗi/cảnh báo trên nhánh, {b} trên base")
+    return Gate(
+        f"static_{name}",
+        status,
+        f"{h} dòng lỗi/cảnh báo trên nhánh, {b} trên base",
+        {"command": command, "base": {"broken": False, "diagnostics": b}},
+    )
 
 
 # ---- Chạy ------------------------------------------------------------------------------
@@ -520,6 +549,7 @@ def verify(ctx: VerifyContext) -> VerifyReport:
         runs=ctx.runs,
         gates=gates,
         verified_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        installed=ctx.install and bool(ctx.target.commands.get("install")),
     )
 
 

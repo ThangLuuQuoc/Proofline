@@ -9,7 +9,7 @@ from typing import Annotated, TextIO, cast
 
 import typer
 
-from proofline import __version__
+from proofline import __version__, knowledge
 from proofline.assess import AssessContext, Assessment, assess, save_snapshot
 from proofline.autonomy import effective_level
 from proofline.config import (
@@ -41,9 +41,11 @@ autonomy_app = typer.Typer(help="Xem mức tự chủ hiệu lực.")
 db_app = typer.Typer(help="Quản lý state/proofline.db.")
 workspace_app = typer.Typer(help="Tạo workspace (config, state, playbook) tách khỏi công cụ.")
 target_app = typer.Typer(help="Thêm và xem repo đích.")
+knowledge_app = typer.Typer(help="Kho tri thức theo domain (docs/08).")
 spec_app = typer.Typer(help="Spec và acceptance journey của một task.")
 app.add_typer(target_app, name="target")
 app.add_typer(spec_app, name="spec")
+app.add_typer(knowledge_app, name="knowledge")
 app.add_typer(config_app, name="config")
 app.add_typer(autonomy_app, name="autonomy")
 app.add_typer(db_app, name="db")
@@ -242,6 +244,11 @@ def _run_assess(cfg: ProoflineConfig, repo: str, *, run: bool, save: bool) -> No
         db_path = workspace / cfg.factory.state_db
         snapshot_id = save_snapshot(db_path, result)
         typer.echo(f"\nĐã lưu snapshot {snapshot_id[:8]} vào {cfg.factory.state_db}")
+        if run:
+            changes = knowledge.record_assess(
+                cfg, target, result, ctx.repo_path, evidence=f"readiness snapshot {snapshot_id}"
+            )
+            _print_knowledge_changes(cfg, target.name, changes)
 
 
 def _print_assessment(result: Assessment) -> None:
@@ -315,6 +322,63 @@ def target_list(config: ConfigOption = None) -> None:
     for repo in cfg.target_repos:
         path = (cfg.workspace / repo.local_path).resolve()
         typer.echo(f"{repo.name}  {path}  (nhánh {repo.default_branch})")
+
+
+def _print_knowledge_changes(
+    cfg: ProoflineConfig, repo: str, changes: list[knowledge.Change]
+) -> None:
+    if not changes:
+        return
+    path = knowledge.facts_path(cfg, repo)
+    typer.secho(f"\nKho tri thức ({_relative(path, cfg.workspace)}):", bold=True)
+    for line in knowledge.describe_changes(changes):
+        typer.echo(f"  - {line}")
+
+
+def _relative(path: Path, base: Path) -> str:
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        return str(path)
+
+
+FACT_MARK = {"active": "●", "expired": "○", "retired": "×"}
+
+
+@knowledge_app.command("show")
+def knowledge_show(
+    repo: Annotated[str | None, typer.Argument(help="Tên repo đích (mặc định: tất cả).")] = None,
+    all_: Annotated[
+        bool, typer.Option("--all", help="Hiện cả sự thật đã hết hạn hoặc đã rút.")
+    ] = False,
+    config: ConfigOption = None,
+) -> None:
+    """Sự thật đo được về repo đích (từ verify và assess --run), kèm trạng thái hết hạn."""
+    cfg = _load(config)
+    try:
+        targets = [cfg.target_repo(repo)] if repo else cfg.target_repos
+    except ConfigError as exc:
+        raise _fail(exc) from exc
+    if not targets:
+        typer.echo("Chưa có repo đích.")
+        return
+    for target in targets:
+        facts = knowledge.current_facts(cfg, target)
+        shown = [f for f in facts.facts if all_ or f.status == "active"]
+        hidden = len(facts.facts) - len(shown)
+        typer.secho(f"{target.name}: {len(shown)} sự thật", bold=True, nl=False)
+        typer.echo(f" ({hidden} đã hết hạn/rút, xem bằng --all)" if hidden else "")
+        if not facts.facts:
+            typer.echo("  Chưa có. Chạy `proofline verify` hoặc `proofline assess --run`.")
+        for fact in shown:
+            typer.echo(f"  {FACT_MARK[fact.status]} {fact.statement}")
+            typer.echo(
+                f"    {fact.source} · {fact.scope.ref} @ {fact.scope.commit[:7]}"
+                f" · đo {fact.measurements} lần, gần nhất {fact.last_measured}"
+                + (f" · {fact.evidence}" if fact.evidence else "")
+            )
+            if fact.status != "active":
+                typer.echo(f"    {fact.status}: {fact.status_reason}")
 
 
 @app.command("start")
@@ -453,6 +517,7 @@ def verify_cmd(
     typer.echo(report.to_markdown())
     md, js = write_report(report, target.artifacts_dir(candidate, cfg.workspace) / "verify")
     typer.echo(f"Báo cáo: {md}\n        {js}")
+    _print_knowledge_changes(cfg, target.name, knowledge.record_verify(cfg, target, report, js))
     if report.status == "fail":
         raise typer.Exit(code=1)
 

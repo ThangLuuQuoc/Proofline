@@ -461,5 +461,5 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 - [ ] Đưa ít nhất 1 repo lên R2 (kiểm kê tính năng, characterization test, CI).
 - [ ] Thu thập 30–50 case cho `evals/golden-set/` (qua `proofline golden mine` / `proofline golden synth`).
 - [ ] Viết `src/eval_runner.py` và chạy baseline (Phase 0); `harness_version` là dấu vân tay harness thực tế, kiểm tra không rò rỉ `hidden_tests`.
-- [ ] Kho tri thức bước K0: `verify`/`assess` ghi sự thật đo được vào `knowledge/repo/<repo>/facts.yaml` ([08-domain-knowledge.md](08-domain-knowledge.md)).
+- [x] Kho tri thức bước K0: `verify`/`assess` ghi sự thật đo được vào `knowledge/repo/<repo>/facts.yaml` ([08-domain-knowledge.md](08-domain-knowledge.md)).
 - [ ] Hiệu chỉnh ngân sách trong config theo p90 chi phí thực đo.

@@ -249,6 +249,16 @@ def test_static_gate(setup, tmp_path):
     assert status((1, "error a"), (1, "error a\nerror b")).status == "fail"
     broken = status((2, "Error [ERR_MODULE_NOT_FOUND]: x"), (2, "Error [ERR_MODULE_NOT_FOUND]: x"))
     assert broken.status == "unknown" and "hỏng sẵn" in broken.detail
+    # The base's cause comes from the base's own output, without its checkout path.
+    broken = status(
+        (2, f"Error [ERR_MODULE_NOT_FOUND]: {tmp_path}/node_modules/x"),
+        (2, f"Error [ERR_MODULE_NOT_FOUND]: {repo}/node_modules/y"),
+    )
+    assert broken.evidence["base"] == {
+        "broken": True,
+        "cause": "Error [ERR_MODULE_NOT_FOUND]: <repo>/node_modules/x",
+    }
+    assert "<repo>/node_modules/y" in broken.detail
 
 
 def test_cli_verify_writes_report(setup):

@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TextIO
 
-from proofline import __version__
+from proofline import __version__, knowledge
 from proofline.assess import AssessContext, assess, find_source_feature_docs, save_snapshot
 from proofline.config import ConfigError, ProoflineConfig, TargetRepo, load_config
 from proofline.state import append_decision_reason, connect, init_db, record_decision
@@ -44,6 +44,7 @@ from proofline.verify import (
 )
 
 PROTOCOL_VERSION = 1
+MAX_FACTS_IN_STATUS = 5
 DEFAULT_GUARD_SECONDS = 2.0
 MODES = [
     {"id": "default", "name": "Standard", "description": "Mọi quyết định của người đều hỏi trước."},
@@ -873,10 +874,16 @@ class AcpServer:
                     ],
                 },
             )
-        md, _ = write_report(
+        md, js = write_report(
             report, target.artifacts_dir(session.cwd, self.config.workspace) / "verify"
         )
-        self.say(sid, report.to_markdown() + f"\nBáo cáo: `{md}`")
+        changes = knowledge.record_verify(self.config, target, report, js)
+        text = report.to_markdown() + f"\nBáo cáo: `{md}`"
+        if changes:
+            text += "\n\n**Kho tri thức** (sự thật đo được về base):\n" + "\n".join(
+                f"- {line}" for line in knowledge.describe_changes(changes)
+            )
+        self.say(sid, text)
 
     # ---- init ----
 
@@ -1144,7 +1151,23 @@ class AcpServer:
                 f"- Spec `{manifest.name}` ({manifest.task_type}, base `{manifest.base}`):"
                 f" {approved}; {verdict}"
             )
+        lines += self._facts_lines(target)
         self.say(sid, "\n".join(lines))
+
+    def _facts_lines(self, target: TargetRepo) -> list[str]:
+        facts = knowledge.current_facts(self.config, target).facts
+        active = [f for f in facts if f.status == "active"]
+        stale = len(facts) - len(active)
+        if not facts:
+            return ["- Kho tri thức: chưa có sự thật đo được (chạy `/verify`)."]
+        lines = [
+            f"- Kho tri thức: {len(active)} sự thật đang dùng"
+            + (f", {stale} đã hết hạn/rút (`proofline knowledge show --all`)" if stale else "")
+        ]
+        lines += [f"  - {f.statement}" for f in active[:MAX_FACTS_IN_STATUS]]
+        if len(active) > MAX_FACTS_IN_STATUS:
+            lines.append(f"  - … và {len(active) - MAX_FACTS_IN_STATUS} sự thật khác")
+        return lines
 
 
 def serve_stdio(config_path: Path | None) -> None:

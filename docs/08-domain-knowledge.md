@@ -125,13 +125,36 @@ Trạng thái `candidate` và số liệu dùng (`stats`) cập nhật thường
 
 | Bước | Việc | Cần có trước | Tiêu chí đạt |
 | :--- | :--- | :--- | :--- |
-| **K0. Sự thật đo được** | `verify`/`assess` ghi `facts.yaml` (test fail sẵn, lệnh hỏng trên base, thứ tự test…); `proofline knowledge show`; `/status` hiện các fact của repo | Đã có `verify`, `assess` | Chạy lại `verify` trên tiniagent sinh đúng các fact đã biết bằng tay; fact hết hạn khi base đổi |
+| **K0. Sự thật đo được** ✅ | `verify`/`assess` ghi `facts.yaml` (test fail sẵn, lệnh hỏng trên base, thứ tự test…); `proofline knowledge show`; `/status` hiện các fact của repo | Đã có `verify`, `assess` | Chạy lại `verify` trên tiniagent sinh đúng các fact đã biết bằng tay; fact hết hạn khi base đổi |
 | **K1. Worker nạp kho tri thức** | Nạp `active` theo domain, có giới hạn dung lượng, vào fingerprint harness | Worker (Phase 1) | Trace ghi rõ mục nào được nạp; chạy lại cùng fingerprint ra cùng tập mục |
 | **K2. Ghi nhận và Knowledge PR** | Phản tư có bằng chứng → `candidate`; gộp trùng; PR hằng tuần qua Golden Set của domain; duyệt qua digest/ACP | Golden Set, Lead Agent (Phase 4) | 0 mục `active` thiếu bằng chứng hoặc chưa qua Golden Set |
 | **K3. Propose–Probe–Compose offline** | Tối ưu kho tri thức của một domain trên Golden Set, chọn bằng gate | Golden Set theo domain ≥ 5 case/domain (Phase 5) | pass@1 của domain tăng vượt mức dao động so với trước |
 | **K4. Tri thức theo stack** | Nâng mục giống nhau ở ≥ 2 repo lên `stack/<stack>` | ≥ 2 repo đích cùng stack | Repo mới cùng stack đạt gate lần đầu tốt hơn repo đầu tiên |
 
 ---
+
+### 8.1. Bước K0 đã làm
+
+`src/proofline/knowledge.py`. `proofline verify` (CLI và `/verify` qua ACP) và `proofline assess --run` ghi vào `<workspace>/knowledge/repo/<repo>/facts.yaml`:
+
+| Nguồn | Sự thật (id) | Khi nào ghi / rút |
+| :--- | :--- | :--- |
+| `verify` (về **base**) | `tests.preexisting_failures` | Test fail ở **mọi** lượt trên base; rút khi đo lại không còn |
+| | `tests.unstable_on_base` | Test fail ở **một số** lượt trên base (phụ thuộc thứ tự / trạng thái giữa các lượt) |
+| | `static.<lệnh>.broken` | Typecheck/lint không chạy được trên base; chỉ đo khi nhánh không sạch (nhánh sạch thì base không được chạy nên giữ nguyên) |
+| | `static.<lệnh>.baseline` | Số dòng lỗi/cảnh báo có sẵn trên base |
+| | `install.broken` | `commands.install` lỗi trên base |
+| `assess --run` (về checkout đang đo) | `<tiêu chí>.ok` / `.fails` | Container build, lệnh test, app khởi chạy, CI; kết quả `unknown` là chưa đo nên không ghi |
+
+- **Cộng dồn trên cùng commit:** kết quả test của base qua nhiều lần đo được gộp (mục `observations` trong facts.yaml). Một test chỉ là "fail sẵn" nếu fail ở **mọi** lượt của **mọi** lần đo; fail ở lượt nào đó thì là "không ổn định". Một lần đo một lượt không đo được độ ổn định nên không rút sự thật về nó. Commit base mới thì đo lại từ đầu.
+- Nguyên nhân công cụ hỏng lấy từ output của chính base, đường dẫn checkout thay bằng `<repo>`.
+- Mỗi sự thật có `scope` (ref + commit đã đo), số lần đo, lần đo gần nhất và bằng chứng (báo cáo verify hoặc snapshot assess).
+- **Hết hạn:** mỗi lần đọc hoặc ghi, ref được phân giải lại; trỏ sang commit khác thì `expired` ("cần đo lại"). Đo lại thì trở về `active`.
+- **Rút:** đo lại mà điều kiện không còn thì `retired` kèm commit đã đo lại. Thứ không được đo trong lần này thì giữ nguyên.
+- Xem bằng `proofline knowledge show [repo] [--all]`; `/status` qua ACP hiện tối đa 5 sự thật đang dùng.
+- Chưa nạp vào worker (bước K1).
+
+**Thử trên tiniagent** (base `origin/dev` @ `28e1613`, nhánh `feat/full-flow`): hai lần `verify` ghi lại đúng hai điều đã biết từ lần chạy tay: test không ổn định trên base (lần 1: 0 rồi 23 test fail; lần 2: 1 rồi 2) và `pnpm lint` hỏng sẵn (thiếu `eslint-config-next`). `assess --run` thêm: không có container, `pnpm test` chạy được (94 giây), app khởi chạy ở :3200, chưa có CI. Chính lần thử này cho thấy cần cộng dồn: lần đo thứ hai đã ghi đè "23 test" thành "3 test".
 
 ## 9. Câu hỏi còn mở
 
