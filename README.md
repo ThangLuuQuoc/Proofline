@@ -138,7 +138,7 @@ Các lệnh đã có:
 | `proofline assess <repo> [--run] [--no-save]` | Đo mức sẵn sàng R0–R4 của repo đích, liệt kê việc cần làm để lên mức tiếp theo. Không có `--run` chỉ kiểm tra tĩnh; có `--run` sẽ build container, cài đặt, chạy test, khởi chạy app và hỏi trạng thái CI |
 | `proofline spec approve <manifest.yaml> [--note]` | Người duyệt acceptance journey: ghi git blob của journey vào manifest (`.proofline/specs/<tên>.yaml`) và vào bảng `decisions` |
 | `proofline verify <manifest.yaml> [--runs N] [--no-install]` | Chạy các gate của task trên nhánh, so với base (bản clone riêng trong workspace): journey không đổi so với bản duyệt, journey fail ở khẳng định trên base và pass trên nhánh, không sửa/skip test cũ, có test mới, cả bộ test N lượt mỗi bên so **danh sách test fail** (nhất quán = regression, chỉ vài lượt = không ổn định, có sẵn trên base = bỏ qua), typecheck/lint không xấu hơn base. Báo cáo `.md` + `.json` trong `<artifacts>/verify/`. Exit 1 khi có gate fail |
-| `proofline acp [--workspace <thư mục>]` | Chạy Proofline như một agent ACP qua stdio (PandaCode và client ACP khác); hiện có `/assess`, `/status`, `/help` ([docs/07](docs/07-acp-pandacode.md)) |
+| `proofline acp [--workspace <thư mục>]` | Chạy Proofline như một agent ACP qua stdio (PandaCode và client ACP khác); hiện có `/assess`, `/status`, `/spec`, `/approve`, `/reject`, `/verify`, `/help` ([docs/07](docs/07-acp-pandacode.md)) |
 
 Chạy lệnh trong môi trường dự án bằng `uv run proofline ...`.
 

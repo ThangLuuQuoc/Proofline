@@ -6,7 +6,7 @@ import sqlite3
 from importlib.resources import files
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class SchemaVersionError(Exception):
@@ -75,3 +75,57 @@ def record_human_decision(
     finally:
         conn.close()
     return decision_id
+
+
+def record_decision(
+    db_path: str | Path,
+    decision_type: str,
+    *,
+    decided_by: str,
+    human_choice: str | None = None,
+    human_reason: str = "",
+    agent_choice: str | None = None,
+    agent_rationale: str = "",
+    autonomy_level: str = "L1",
+) -> str:
+    """Ghi một quyết định. `decided_by='agent'` cũng dùng cho câu trả lời bị nghi là client tự
+    duyệt (Decision Guard): không có người đứng sau nên không được tính là quyết định của người."""
+    import uuid
+    from datetime import UTC, datetime
+
+    decision_id = uuid.uuid4().hex
+    conn = init_db(db_path)
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO decisions (decision_id, decision_type, autonomy_level, agent_choice,"
+                " agent_rationale, human_choice, human_reason, decided_by, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    decision_id,
+                    decision_type,
+                    autonomy_level,
+                    agent_choice,
+                    agent_rationale,
+                    human_choice,
+                    human_reason,
+                    decided_by,
+                    datetime.now(UTC).isoformat(timespec="seconds"),
+                ),
+            )
+    finally:
+        conn.close()
+    return decision_id
+
+
+def append_decision_reason(db_path: str | Path, decision_id: str, text: str) -> None:
+    conn = init_db(db_path)
+    try:
+        with conn:
+            conn.execute(
+                "UPDATE decisions SET human_reason = trim(coalesce(human_reason, '') || ' ' || ?)"
+                " WHERE decision_id = ?",
+                (text, decision_id),
+            )
+    finally:
+        conn.close()

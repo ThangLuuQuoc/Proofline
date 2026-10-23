@@ -215,7 +215,7 @@ Cuộc trò chuyện của bot PandaCode là một task bình thường với ag
 | **0. Dùng thử PandaCode** (người dùng) | Cài PandaCode, chạy Claude Code trên repo đích thử nghiệm: board, thanh duyệt, GitHub view, một bot web chat | Người dùng xác nhận trải nghiệm đủ tốt để làm giao diện chính |
 | **1. Khung `proofline acp`** ✅ | `initialize`, `session/new`, `session/prompt`, `session/cancel`, `session/load`, `session/set_mode`; công bố slash command; ánh xạ `cwd` → repo đích; phiên lưu trong bảng `acp_sessions` | Bộ test giao thức với client JSON-RPC giả lập (pytest) đi qua đủ các bước; tiến trình mới mỗi lượt vẫn nối lại đúng task · **Đạt** (`tests/test_acp.py`, kể cả chạy `python -m proofline acp` thật qua stdio: chỉ JSON, UTF-8, không `\r`) |
 | **2. Luồng chỉ đọc** 🟡 | `/assess`, `/status`: stream `tool_call` của từng tiêu chí | Chạy trong một client ACP có cấu hình agent tùy chỉnh; kết quả trùng `proofline assess` ở CLI · Đã kiểm bằng client giả lập; **chưa chạy trong client thật** |
-| **3. Luồng có duyệt + Decision Guard** | Duyệt spec bằng `request_permission` (hai `allow_once`), hỏi lý do bằng chữ, `/approve` / `/reject` | Test tái hiện đúng quy tắc tự duyệt của PandaCode ở Full access: **0 quyết định L1 được áp dụng tự động**; câu trả lời dưới 2 giây bị từ chối và ghi cờ; không lúc nào có `allow_always` cho quyết định mức trần L1/L2 |
+| **3. Luồng có duyệt + Decision Guard** 🟡 | Duyệt spec bằng `request_permission` (hai `allow_once`), hỏi lý do bằng chữ, `/approve` / `/reject`; chạy `/verify` qua ACP | Test tái hiện đúng quy tắc tự duyệt của PandaCode ở Full access: **0 quyết định L1 được áp dụng tự động**; câu trả lời dưới 2 giây bị từ chối và ghi cờ; không lúc nào có `allow_always` cho quyết định mức trần L1/L2 · Đã kiểm bằng client giả lập (`tests/test_acp_decisions.py`, đồng hồ giả: người trả lời sau 5 giây, client tự chọn sau 0,3 giây); **chưa chạy trong client thật**. Chi tiết ở mục 7.2 |
 | **4. Chạy trong PandaCode** | Trước mắt dùng **lệnh giả `command-code`** với bản PandaCode chính thức (mục 7.1). Lâu dài: bản build cục bộ có provider Proofline (đăng ký ở khoảng 15 chỗ trong `providers.rs` cùng giao diện chọn agent, nhiều hơn một file như ước tính ban đầu; cần Rust) hoặc tính năng upstream ở bước 6 | Làm lại một tính năng cỡ lần chạy thử đầu tiên trên repo đích thử nghiệm, hoàn toàn từ PandaCode: nhập issue → board → duyệt spec ở thanh duyệt → gate → PR draft. Ghi lại mọi chỗ vướng |
 | **5. Bot** | Bot web chat (sau đó Telegram) với agent Proofline; lịch 07:00 `/status` | Bản tin đến đúng giờ; duyệt `yes`/`no` từ kênh được ghi vào `decisions`; `/stop` dừng gate và dọn tiến trình; kiểm tra hành vi khi trả lời `always` |
 | **6. Đóng góp lên PandaCode** | Mở issue/PR "custom ACP agents" (khai báo lệnh, tham số, biến môi trường của một agent ACP tùy ý) thay vì giữ provider riêng | Proofline dùng được trong bản PandaCode chính thức mà không cần build riêng |
@@ -234,13 +234,29 @@ uv run --project "<đường dẫn repo Proofline>" proofline %* --workspace "<t
 
 1. Đặt file trên vào một thư mục trong `PATH` (vd `<workspace>/bin`, rồi thêm thư mục này vào `PATH` của người dùng) và khởi động lại PandaCode.
 2. Trong PandaCode: mở repo đích như một project, chọn agent **Command Code**, chế độ **Standard**.
-3. Gõ `/assess` hoặc `/status`.
+3. Gõ `/assess`, `/status`, `/spec`, `/verify` (xem mục 7.2).
 
 **Lưu ý:**
 - Giao diện vẫn hiện chữ "Command Code"; đó là tên của provider bị mượn, không phải Proofline.
 - Ở Full access, PandaCode xin chế độ `bypass`; Proofline từ chối nên lượt dừng (đúng ý đồ ở mục 4.1).
 - PandaCode đọc danh sách model từ `configOptions` của phiên; Proofline chưa công bố model nào nên ô chọn model có thể trống.
 - Đây là mẹo tạm cho bước 4; đường chính thức vẫn là bước 6.
+
+### 7.2. Luồng có duyệt đã làm (bước 3)
+
+| Lệnh | Việc | Quyết định ghi vào `decisions` |
+| :--- | :--- | :--- |
+| `/spec [tên]` | Hiện spec, journey, lịch sử duyệt. Nếu journey chưa duyệt hoặc đã đổi sau lần duyệt: gửi `tool_call` có khối `diff` (bản đã duyệt → bản hiện tại) rồi `session/request_permission` với **Duyệt** (`allow_once`), **Duyệt, có góp ý** (`allow_once`), **Từ chối** (`reject_once`) | `acceptance_approval`, `decided_by='human'`; duyệt thì thêm một mục vào `journey_approvals` của spec |
+| Tin nhắn kế tiếp | Sau "Duyệt, có góp ý" hoặc "Từ chối", Proofline hỏi góp ý / lý do; tin nhắn không bắt đầu bằng `/` ở lượt sau là câu trả lời (câu hỏi lưu ở bảng `acp_pending` vì mỗi lượt là một tiến trình mới). Gõ một lệnh khác thì bỏ câu hỏi | Nối vào `human_reason` của quyết định vừa ghi |
+| `/approve [tên] [góp ý]`, `/reject [tên] <lý do>` | Đường bằng chữ. Người gõ lệnh nên không qua Decision Guard. Không ghi tên spec thì lấy spec duy nhất đang chờ duyệt | Như trên, kèm kênh `[lệnh /approve]` |
+| `/verify [tên] [--runs N] [--no-install]` | Xin phép chạy lệnh của repo (**Chạy verify**, **Chạy nhanh: 1 lượt, không cài lại**, **Không chạy**), rồi chạy các gate: mỗi giai đoạn là một `tool_call` `execute`, mỗi gate một `tool_call` có kết quả; cuối cùng gửi bảng báo cáo và ghi `verify/<spec>.md|json`. Từ chối ở chế độ Plan. `--yes` (người gõ) bỏ qua câu hỏi | `run_repo_commands` |
+
+**Decision Guard:** lựa chọn kiểu `allow` đến sớm hơn `acp.decision_guard_seconds` (mặc định 2 giây) kể từ lúc hỏi thì **không áp dụng**, ghi `decided_by='agent'`, `agent_choice='client_auto_suspected'` kèm thời gian, và nhắn người dùng gõ lệnh bằng chữ (`/approve <tên>` hoặc `/verify <tên> --yes`). Từ chối nhanh vẫn được tôn trọng: dừng lại không bao giờ nguy hiểm. Huỷ (`session/cancel`) trong lúc chờ thì không ghi quyết định nào.
+
+**Giới hạn hiện tại:**
+- `/spec` chỉ xem và duyệt spec đã có trong `.proofline/specs/`; viết spec từ yêu cầu bằng lời là bước sau (cần worker).
+- Trong lúc `/verify` chạy, agent không đọc stdin nên `session/cancel` chỉ có tác dụng khi verify xong. Dừng giữa chừng cần tách luồng đọc, làm cùng bot `/stop` ở bước 5.
+- Lệnh của repo chạy trực tiếp trên máy (chưa có sandbox); câu hỏi xin phép nói rõ điều này.
 
 ---
 

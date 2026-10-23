@@ -1,4 +1,4 @@
--- Schema state/proofline.db (phiên bản 2; v2 thêm acp_sessions, chỉ thêm bảng nên DB v1 nâng cấp tại chỗ).
+-- Schema state/proofline.db (phiên bản 3; v2 thêm acp_sessions, v3 thêm acp_pending; chỉ thêm bảng nên DB cũ nâng cấp tại chỗ).
 -- Mô tả cột: docs/04-execution-plan.md (runs, tasks, decisions, readiness_snapshots)
 -- và docs/06-the-outer-loop.md (signals, clusters).
 -- Cột JSON lưu dạng TEXT; thời gian lưu ISO 8601 (UTC).
@@ -121,4 +121,12 @@ CREATE TABLE IF NOT EXISTS acp_sessions (
     mode       TEXT NOT NULL DEFAULT 'default',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+
+-- v3: câu hỏi Proofline đang chờ người trả lời bằng chữ ở lượt sau (góp ý khi duyệt, lý do từ chối).
+CREATE TABLE IF NOT EXISTS acp_pending (
+    session_id TEXT PRIMARY KEY,
+    kind       TEXT NOT NULL CHECK (kind IN ('approval_note', 'reject_reason')),
+    payload    TEXT NOT NULL,
+    created_at TEXT NOT NULL
 );
