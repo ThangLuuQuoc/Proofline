@@ -37,7 +37,8 @@ Proofline/
 │   ├── 04-execution-plan.md           # Kế hoạch thực thi 8 giai đoạn (Phase 0–7)
 │   ├── 05-starting-points.md          # Hai điểm xuất phát & mức sẵn sàng R0–R4
 │   ├── 06-the-outer-loop.md           # Outer Loop: khách hàng, team, telemetry production
-│   └── 07-acp-pandacode.md            # Giao diện: Proofline là agent ACP, PandaCode là client đầu tiên
+│   ├── 07-acp-pandacode.md            # Giao diện: Proofline là agent ACP, PandaCode là client đầu tiên
+│   └── 08-domain-knowledge.md         # Kho tri thức theo domain, tự cải thiện có kiểm chứng
 ├── src/proofline/                     # Mã nguồn công cụ
 │   ├── templates/                     # Bản mẫu chép vào workspace khi `proofline workspace init`
 │   │   ├── proofline.yaml             # Config mẫu: model, ngân sách, gate, taste, autonomy (chưa có repo đích)
@@ -212,6 +213,7 @@ flowchart TD
 * Hai điểm xuất phát & mức sẵn sàng: [05-starting-points.md](docs/05-starting-points.md)
 * Outer Loop: [06-the-outer-loop.md](docs/06-the-outer-loop.md)
 * Tích hợp ACP với PandaCode (board, duyệt, bot, GitHub): [07-acp-pandacode.md](docs/07-acp-pandacode.md)
+* Kho tri thức theo domain (tự cải thiện có kiểm chứng): [08-domain-knowledge.md](docs/08-domain-knowledge.md)
 * Config mẫu: [proofline.yaml](src/proofline/templates/proofline.yaml)
 * Chốt an toàn (mẫu): [guardrails.md](src/proofline/templates/playbooks/guardrails.md)
 * Gu Tech Lead (mẫu): [tech-lead-taste.md](src/proofline/templates/playbooks/tech-lead-taste.md)

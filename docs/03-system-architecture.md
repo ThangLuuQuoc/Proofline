@@ -112,6 +112,8 @@ graph TD
 * **Chọn case lịch sử:** phần sửa < 100 dòng, có test đi kèm, không cần mock hệ thống ngoài phức tạp, test tất định; phân bố khoảng 60% S / 30% M / 10% L. `proofline golden mine` đề xuất ứng viên, người chọn.
 * **Decision Replay Set** (`evals/decision-replay/`) đo *độ giống người khi ra quyết định*: PR lịch sử kèm quyết định thật của người (merge nguyên trạng / yêu cầu sửa / đóng) và lý do. Dùng để kiểm chứng Lead Agent và mọi thay đổi của `tech-lead-taste.md`.
 * **Cách chấm:** giải đúng = `hidden_tests` pass + toàn bộ test suite không regression. Mỗi case chạy 3 lần vì agent không tất định. Chỉ số chính là **pass@1 trung bình**; **pass@3** chỉ là cận trên.
+* **Dấu vân tay harness:** `harness_version` không chỉ là Git SHA của Proofline mà là digest của **toàn bộ harness thực tế worker đã nạp** (guardrails, taste, playbook, kho tri thức, cấu hình model). Một lần chạy chỉ được dùng lại khi trùng dấu vân tay (ý tưởng `runmark` của Harness²), nên resume eval không lẫn kết quả của cấu hình khác.
+* **Chống rò rỉ đáp án:** trước khi giao việc, eval runner kiểm tra ngữ cảnh đưa cho worker không chứa `hidden_tests`, đường dẫn hay nội dung của chúng; bộ chấm lỗi thì kết quả là `unknown`, không tính là 0.
 * **Lưu trữ:** mọi lần chạy ghi vào `state/proofline.db` (bảng `runs`, `tasks`, `decisions`, `readiness_snapshots`; schema ở [04-execution-plan.md](04-execution-plan.md)), dùng chung cho eval, shadow và production.
 
 ### 2.2. Điểm xuất phát & mức sẵn sàng của repo
@@ -159,6 +161,7 @@ Hệ thống **không cố định model**. Code chỉ gọi model qua tên vai 
 * **Mạng mặc định bị chặn**, chỉ cho phép API model và registry package. Không truyền biến môi trường hay secret của máy chủ vào container.
 * **GitHub App** quyền tối thiểu. Worker chỉ tạo nhánh `proofline/*` và mở PR; **chỉ Autonomy Controller được gọi merge**, và chỉ vào nhánh trong `autonomy.auto_merge.target_branches`. `main`/`master` được bảo vệ bằng branch protection.
 * Hook/permission của worker chặn `git push --force`, push nhánh bảo vệ, lệnh merge, đọc file secret.
+* **Harness cô lập:** worker chỉ nạp harness do Proofline cấp, không đọc skill, rule hay `CLAUDE.md` cấp người dùng mà client (vd thư viện Skills của PandaCode) hoặc người dùng cài cho các phiên chat riêng. Nếu repo đích có sẵn `CLAUDE.md`/`AGENTS.md` được commit thì đó là một phần của repo, được tính vào dấu vân tay harness.
 
 ### 2.6. Verifier do harness thực thi
 Harness tự chạy lại mọi kiểm tra trong container sạch, không tin báo cáo của agent. Bộ gate khai báo theo loại task trong `task_types`:
@@ -262,6 +265,9 @@ Autonomy Controller là **code xác định**, không phải LLM. Nó đọc nh�
   - Dọn worktree và container, giữ lại nhánh `proofline/attempt-<id>` cùng test tái hiện và kịch bản người dùng.
   - Ghi tóm tắt bàn giao vào digest, ví dụ: *"Đã thử 3 hướng [A, B, C], vướng tại hàm X vì phụ thuộc Y. Test tái hiện có sẵn tại nhánh `proofline/attempt-<id>`."*
 * Khi chạm ngân sách đêm ($50), dispatcher dừng nhận task mới. Việc tự tìm không dùng quá 30% ngân sách đêm.
+
+### 2.12b. Kho tri thức theo domain
+Sự thật và bài học kỹ thuật gắn với `stack` / `repo` / vùng code, nạp cho worker theo file nó chạm vào. Sự thật đo được (từ `verify`, `assess`) tự vào kho và hết hạn khi base đổi; bài học, script, bẫy chỉ được dùng khi đủ bằng chứng, qua Golden Set của domain và người duyệt (`knowledge_update`, trần L2). Nằm trong workspace, không ghi vào repo đích. Chi tiết ở [08-domain-knowledge.md](08-domain-knowledge.md).
 
 ### 2.13. Outer Loop (Phase 7)
 Nối hệ thống với khách hàng, team và production. Chi tiết đầy đủ ở [06-the-outer-loop.md](06-the-outer-loop.md).

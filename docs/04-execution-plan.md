@@ -339,6 +339,7 @@ flowchart LR
   2. **Cập nhật `playbooks/tech-lead-taste.md`:** mỗi nguyên tắc ghi rõ quy tắc, lý do, link bằng chứng và số lần quan sát. Nguyên tắc chỉ chuyển sang `active` khi có ≥ 3 bằng chứng **hoặc** đến từ `/proofline teach`. Thay đổi được đề xuất dạng PR, không ghi trực tiếp.
   3. **Kiểm chứng gu bằng Decision Replay Set** (`evals/decision-replay/`): tập PR lịch sử kèm quyết định thật và lý do của người. Lead Agent với taste mới phải dự đoán quyết định của người **không kém** taste cũ; đồng thời Golden Set không giảm điểm.
   4. **Đề xuất playbook kỹ thuật** (`playbooks/skills/`) đi theo cùng quy trình: PR → Golden Set → người duyệt.
+  4b. **Kho tri thức theo domain** ([08-domain-knowledge.md](08-domain-knowledge.md), bước K2–K3): phản tư có bằng chứng sau mỗi task → `candidate`; Knowledge PR hằng tuần qua Golden Set **của domain**; tối ưu offline kiểu Propose–Probe–Compose của Harness², chọn bằng gate thật.
   5. Bổ sung case mới vào Golden Set và Decision Replay Set từ việc thật đã xử lý.
   6. Nguyên tắc mâu thuẫn với guardrails bị loại tự động; với team nhiều người, tách nguyên tắc chung của team và sở thích riêng của từng người review.
 * **Tiêu chuẩn nghiệm thu:**
@@ -459,5 +460,6 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 - [x] `proofline acp`: `/init` đăng ký thư mục đang mở làm repo đích (chỉ ghi vào workspace), thư mục trống thì hỏi `git init`, rồi assess. Người dùng bắt đầu từ PandaCode mà không cần CLI.
 - [ ] Đưa ít nhất 1 repo lên R2 (kiểm kê tính năng, characterization test, CI).
 - [ ] Thu thập 30–50 case cho `evals/golden-set/` (qua `proofline golden mine` / `proofline golden synth`).
-- [ ] Viết `src/eval_runner.py` và chạy baseline (Phase 0).
+- [ ] Viết `src/eval_runner.py` và chạy baseline (Phase 0); `harness_version` là dấu vân tay harness thực tế, kiểm tra không rò rỉ `hidden_tests`.
+- [ ] Kho tri thức bước K0: `verify`/`assess` ghi sự thật đo được vào `knowledge/repo/<repo>/facts.yaml` ([08-domain-knowledge.md](08-domain-knowledge.md)).
 - [ ] Hiệu chỉnh ngân sách trong config theo p90 chi phí thực đo.

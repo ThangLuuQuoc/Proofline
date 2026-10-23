@@ -71,3 +71,33 @@ Harness² thiết kế toàn bộ hạ tầng điều khiển thành 8 tệp/th�
 Trên các benchmark phức tạp mô phỏng môi trường làm việc thực tế của kỹ sư phần mềm:
 * **WorkBuddy-Bench, JobBench, LAB:** Cải thiện trực tiếp từ **+4 đến +11 điểm %** tỷ lệ hoàn thành tác vụ thành công.
 * Toàn bộ cải tiến đạt được mà **không cần bất kỳ GPU training hay fine-tune nào**, chỉ thuần túy tối ưu cấu trúc Harness.
+
+---
+
+## 5. Đối chiếu với mã nguồn và với Proofline
+
+Đọc mã nguồn [google-research/harness2](https://github.com/google-research/harness2) (commit `1cfe254`, Apache 2.0). Proofline **không dùng code hay thư viện** của Harness²; chỉ lấy ý tưởng.
+
+### 5.1. Điểm cần chỉnh so với phần tóm tắt ở trên
+* Đây là khung **nghiên cứu cho benchmark** (JobBench, LAB, WorkBuddy), không phải công cụ dùng trên repo thật. Agent thực thi chỉ có **OpenCode và Codex**; model mặc định qua Vertex AI; cần **Python ≥ 3.12, chỉ POSIX**. Codex chạy với sandbox tắt, mạng không giới hạn.
+* Không có đáp án chuẩn: bước chọn harness tốt nhất do **một LLM chọn** trong các kết quả đã ẩn danh; điểm của bộ chấm chỉ dùng để đo **sau khi** đã chọn, không bao giờ quay lại phương pháp. Vì vậy Tầng 2 không "kích hoạt khi task thành công" (hệ thống không biết task thành công hay không).
+* Ngân sách mỗi task: **4k lần chạy agent + 3k phiên cải tiến** (k=1: 4 + 3).
+* Thư viện kinh nghiệm chia **theo domain** (`<domain>/harnesses/<task>/harness/` + `EXPERIENCE.md` + `INDEX.md`), lưu **nguyên cây harness** chứ không tóm tắt, được **tự áp dụng** cho task sau cùng domain, và **bắt đầu trống ở mỗi lượt chạy** (không phải kho tri thức lâu dài).
+
+### 5.2. Chỗ đụng với kế hoạch Proofline
+| Harness² | Proofline | Cách giữ |
+| :--- | :--- | :--- |
+| Tự áp dụng harness và bài học cho task sau, không qua bộ đo, không qua người | Mọi thay đổi harness/playbook/taste phải qua Golden Set và người duyệt (`harness_learning.require_*`) | Giữ cách của Proofline; kho tri thức theo domain thiết kế lại ở [08-domain-knowledge.md](08-domain-knowledge.md) |
+| Chọn bản tốt nhất bằng LLM, không đáp án | Có gate thật: journey fail trên base → pass, test, hidden tests | Dùng gate làm bộ chọn, LLM chỉ để giải thích |
+| Vòng trong chạy cho **mỗi task** (≥ 4 lần chạy) | Ngân sách theo ngày, một worker mỗi issue | Chỉ chạy kiểu Propose–Probe–Compose **offline trên Golden Set** (Phase 5), không chạy cho mọi issue |
+| 8 thành phần là file do Harness² quản | Worker nạp guardrails, taste, playbook; PandaCode cũng ghi skill/rule vào `.claude/`, `CLAUDE.md` | Worker cô lập, harness có dấu vân tay ([03](03-system-architecture.md) mục 2.1, 2.5; [07](07-acp-pandacode.md) mục 4.4) |
+
+### 5.3. Ý tưởng mượn
+1. **Dấu vân tay harness** và đánh dấu lần chạy đã xong kèm cấu hình (`core/runmark.py`) → `harness_version`, resume eval.
+2. **Kiểm tra rò rỉ** (`assert_no_leak_paths`, `assert_no_grader_verdicts` trong `core/context.py`) → ngữ cảnh của worker không chứa `hidden_tests`.
+3. **Bộ chấm tách khỏi phương pháp**, lỗi chấm là `None` chứ không phải 0 (`core/judge.py`); Proofline đã có trạng thái `unknown`.
+4. **Bằng chứng dạng cây file** cho agent đề xuất (`core/context.py`: task, trajectory, kết quả, harness, thư viện) thay vì nhồi vào prompt.
+5. **Giao diện `BenchmarkAdapter`** (danh sách task, chạy, kết quả, chấm sau khi chọn) làm mẫu cho `eval_runner`.
+6. **Thư viện theo domain, lấy theo cấu trúc thư mục** → kho tri thức theo domain của Proofline (docs/08).
+
+Chép code của Harness² thì phải giữ ghi chú giấy phép Apache 2.0.

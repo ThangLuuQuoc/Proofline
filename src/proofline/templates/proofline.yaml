@@ -274,6 +274,7 @@ autonomy:
     merge_logic_change:     { current: "L2", max: "L2", min_readiness: null }   # Không bao giờ tự merge thay đổi logic
     self_sourced_task:      { current: "L0", max: "L3", min_readiness: "R4" }   # Cấp 3 khi đạt L3+
     taste_or_playbook_update: { current: "L2", max: "L2", min_readiness: null }
+    knowledge_update:       { current: "L2", max: "L2", min_readiness: null }   # Bài học/script/bẫy vào kho tri thức (fact đo được thì tự động)
     # Outer Loop (Phase 7, docs/06-the-outer-loop.md)
     feedback_to_issue:      { current: "L1", max: "L3", min_readiness: "R2" }   # Chỉ cho cụm đã tái hiện được
     priority_ranking:       { current: "L1", max: "L3", min_readiness: "R3" }
@@ -406,6 +407,27 @@ harness_learning:
   require_human_approval: true
   skill_store_path: "playbooks/skills"
   guardrails_path: "playbooks/guardrails.md"
+
+# Kho tri thức theo domain (docs/08-domain-knowledge.md). Nằm trong workspace, không ghi vào repo đích.
+knowledge:
+  path: "knowledge"
+  levels: ["stack", "repo", "area"]     # Nạp theo file việc chạm vào; lấy theo cấu trúc thư mục
+  load:
+    statuses: ["active"]                # candidate không bao giờ vào ngữ cảnh worker
+    max_chars: 12000                    # Vượt thì báo trong trace, không âm thầm cắt
+  facts:
+    auto_activate: true                 # Sự thật đo được (verify/assess) tự vào kho, gắn commit đo
+    expire_on_base_change: true
+  promotion:
+    min_observations: 3                 # Từ các task khác nhau (hoặc người dạy trực tiếp)
+    batch: "weekly"                     # Gom thành một Knowledge PR
+    require_domain_golden_set_pass: true
+    require_golden_set_pass: true
+    require_human_approval: true
+  retire:
+    unused_tasks: 30                    # Không được nạp trong N task của domain thì rút
+    on_contradicting_fact: true
+  exclude_on_own_golden_case: true      # Mục sinh từ một case Golden Set không được nạp khi chấm lại case đó
 
 # Quan sát
 observability:
