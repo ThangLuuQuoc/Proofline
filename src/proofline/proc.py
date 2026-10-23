@@ -51,6 +51,16 @@ def kill_tree(proc: subprocess.Popen) -> None:
         except ProcessLookupError:
             pass
     proc.wait(timeout=10)
+    if sys.platform != "win32":
+        # SIGKILL is asynchronous and wait() only covers the shell: the app it started (still
+        # holding the port) may outlive it for a moment. Wait until the whole group is gone.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            try:
+                os.killpg(proc.pid, 0)
+            except (ProcessLookupError, PermissionError):
+                break
+            time.sleep(0.05)
 
 
 def run_command(command: str, cwd: Path, timeout: float) -> CommandResult:
