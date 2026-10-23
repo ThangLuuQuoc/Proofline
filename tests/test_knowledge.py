@@ -199,3 +199,34 @@ def test_knowledge_show_and_acp_status(setup):
     assert (
         len(data["facts"]) == 3 and data["observations"]["verify.tests@main"]["measurements"] == 2
     )
+
+
+def journey_report(repo, outcomes, cause="Error: Hook timed out in 10000ms"):
+    report = base_report(repo)
+    attempts = [{"outcome": o, "detail": cause if o == "wrong_reason" else "1/1"} for o in outcomes]
+    report.gates.append(
+        Gate("acceptance_fails_before", "pass", "", {"attempts": attempts, "failed": []})
+    )
+    return report
+
+
+def test_journey_retries_on_base_become_a_fact(setup):
+    repo, ws, config = setup
+    cfg = load_config(config)
+    target = cfg.target_repo("calc")
+    key = "verify.journey.inconclusive_on_base@main"
+    knowledge.record_verify(cfg, target, journey_report(repo, ["assertion"]))
+    assert key not in facts_of(config)  # conclusive at once: nothing to say
+    knowledge.record_verify(cfg, target, journey_report(repo, ["wrong_reason", "assertion"]))
+    fact = facts_of(config)[key]
+    assert "1/3 lần" in fact.statement and "chạy lại 1 lần" in fact.statement
+    assert "Hook timed out" in fact.statement
+    # Same commit: counts add up, a clean run does not erase what was seen.
+    knowledge.record_verify(cfg, target, journey_report(repo, ["assertion"]))
+    fact = facts_of(config)[key]
+    assert fact.status == "active" and fact.data["runs"] == 4 and fact.data["retries"] == 1
+    # New base commit, clean run: retired.
+    moved = sh(repo, "commit-tree", "main^{tree}", "-p", "main", "-m", "move main")
+    sh(repo, "update-ref", "refs/heads/main", moved)
+    knowledge.record_verify(cfg, target, journey_report(repo, ["assertion"]))
+    assert facts_of(config)[key].status == "retired"

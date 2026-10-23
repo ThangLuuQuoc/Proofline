@@ -17,8 +17,10 @@ from proofline.verify import (
     Gate,
     VerifyContext,
     classify_regressions,
+    gate_fails_before,
     gate_static,
     load_manifest,
+    prepare_base,
     verify,
 )
 from proofline.workspace import init_workspace
@@ -170,7 +172,54 @@ def test_journey_failing_for_the_wrong_reason_on_base(setup):
     _, gates = run_verify(repo, config)
     assert gates["acceptance_unchanged"].status == "pass"
     assert gates["acceptance_fails_before"].status == "fail"
+    # A deterministic wrong reason stays wrong after the retries, and the report says so.
     assert "sai lý do" in gates["acceptance_fails_before"].detail
+    assert "sau 2 lần chạy lại; 3/3 lần" in gates["acceptance_fails_before"].detail
+
+
+def flaky_journey(counter: Path, flakes: int) -> str:
+    """Journey fail như hook timeout `flakes` lần đầu, sau đó fail/pass ở khẳng định."""
+    return (
+        "import pathlib\n\nimport calc\n\n"
+        f"COUNTER = pathlib.Path({str(counter)!r})\n\n\n"
+        "def test_user_can_multiply():\n"
+        "    n = int(COUNTER.read_text()) if COUNTER.exists() else 0\n"
+        "    COUNTER.write_text(str(n + 1))\n"
+        f"    if n < {flakes}:\n"
+        '        raise TimeoutError("Hook timed out in 10000ms")\n'
+        '    assert hasattr(calc, "mul"), "mul missing"\n'
+    )
+
+
+@pytest.mark.parametrize(
+    ("flakes", "retries", "status", "attempts", "note"),
+    [
+        (1, 2, "pass", ["wrong_reason", "assertion"], "sau 1 lần chạy lại; 1/2 lần"),
+        (5, 2, "fail", ["wrong_reason"] * 3, "sau 2 lần chạy lại; 3/3 lần"),
+        (1, 0, "fail", ["wrong_reason"], None),
+    ],
+)
+def test_base_journey_is_retried_when_it_fails_for_another_reason(
+    setup, tmp_path, flakes, retries, status, attempts, note
+):
+    repo, _, config = setup
+    counter = tmp_path / "count"
+    write(repo / JOURNEY, flaky_journey(counter, flakes))
+    cfg = load_config(config)
+    ctx = VerifyContext(
+        config=cfg,
+        target=cfg.target_repo("calc"),
+        candidate=repo,
+        manifest=load_manifest(repo / ".proofline/specs/mul.yaml"),
+        journey_retries=retries,
+    )
+    gate = gate_fails_before(ctx, prepare_base(ctx, sh(repo, "rev-parse", "main")))
+    assert gate.status == status, gate.detail
+    assert [a["outcome"] for a in gate.evidence["attempts"]] == attempts
+    if note:
+        assert note in gate.detail and "Hook timed out" in gate.detail
+    else:
+        assert "chạy lại" not in gate.detail
 
 
 def test_a_real_regression_fails(setup):

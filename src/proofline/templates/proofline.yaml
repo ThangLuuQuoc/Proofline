@@ -202,6 +202,7 @@ verification:
   user_journey:                         # Kiểm chứng như người dùng thật
     # Thư mục kịch bản khai báo theo từng repo (target_repos[].journeys_dir); kịch bản được giữ lại làm test E2E hồi quy
     must_fail_on_base: true             # Phải fail ở bước khẳng định mục tiêu trên base_commit
+    base_retries: 2                     # Journey trên base fail không ở khẳng định (timeout, môi trường): chạy lại tối đa N lần
     must_pass_after_fix: true
     fail_on_console_errors: true
     fail_on_http_5xx: true

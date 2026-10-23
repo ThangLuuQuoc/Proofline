@@ -35,6 +35,7 @@ from proofline.proc import CommandResult, run_command
 Status = Literal["pass", "fail", "unknown"]
 COMMAND_TIMEOUT = 1800.0
 VERIFY_DIR = ".verify"
+DEFAULT_BASE_RETRIES = 2
 TEST_PATH = re.compile(
     r"(^|/)(tests?|__tests__|e2e|spec)/|\.(test|spec)\.[cm]?[jt]sx?$|(^|/)test_[^/]*\.py$|_test\.(py|go)$"
 )
@@ -174,6 +175,17 @@ class VerifyContext:
     install: bool = True
     runner: Runner = run_command
     log: Callable[[str], None] = lambda _msg: None
+    # Lần chạy lại journey trên base khi nó fail không ở khẳng định (None: theo config).
+    journey_retries: int | None = None
+
+    @property
+    def base_journey_retries(self) -> int:
+        if self.journey_retries is not None:
+            return max(0, self.journey_retries)
+        value = self.config.extra_value(
+            "verification", "user_journey", "base_retries", default=DEFAULT_BASE_RETRIES
+        )
+        return max(0, int(value))
 
     @property
     def work_dir(self) -> Path:
@@ -319,46 +331,87 @@ def gate_test_changes(ctx: VerifyContext, base_sha: str) -> list[Gate]:
     return gates
 
 
-def gate_fails_before(ctx: VerifyContext, base: Path) -> Gate:
+def _journey_on_base(ctx: VerifyContext, base: Path, label: str):
     journey = ctx.manifest.journey
     target = base / journey
     existed = target.exists()
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ctx.candidate / journey, target)
     try:
-        run, result = run_tests(ctx, base, "journey-base", [journey])
+        return run_tests(ctx, base, label, [journey])
     finally:
         if existed:
             git(["checkout", "--quiet", "--", journey], base)
         else:
             target.unlink(missing_ok=True)
+
+
+def _attempt(run: TestRun | None, result: CommandResult) -> dict:
+    """One run of the journey on base, classified. Only `wrong_reason` and `no_junit` are
+    inconclusive (a timeout or a broken environment can be transient)."""
     if run is None:
+        return {"outcome": "no_junit", "detail": result.output_tail.strip()[-200:]}
+    failed = [o for o in run.outcomes if o.failed]
+    if not failed:
+        return {"outcome": "pass", "detail": ""}
+    wrong = [o for o in failed if not o.is_assertion]
+    if wrong:
+        cause = f"{wrong[0].error_type or wrong[0].status}: {wrong[0].message[:120]}"
+        return {"outcome": "wrong_reason", "detail": cause, "failed": [asdict(o) for o in failed]}
+    return {
+        "outcome": "assertion",
+        "detail": f"{len(failed)}/{len(run.outcomes)}",
+        "failed": [o.id for o in failed],
+    }
+
+
+def gate_fails_before(ctx: VerifyContext, base: Path) -> Gate:
+    attempts: list[dict] = []
+    for i in range(1 + ctx.base_journey_retries):
+        if i:
+            ctx.log(
+                f"Journey trên base: chạy lại lần {i}/{ctx.base_journey_retries}"
+                f" (lần trước: {attempts[-1]['detail'][:80]})"
+            )
+        attempts.append(_attempt(*_journey_on_base(ctx, base, f"journey-base-{i + 1}")))
+        if attempts[-1]["outcome"] in ("pass", "assertion"):
+            break
+    last = attempts[-1]
+    retried = len(attempts) - 1
+    evidence: dict = {"attempts": [{k: a[k] for k in ("outcome", "detail")} for a in attempts]}
+    note = ""
+    if retried:
+        flaky = [a for a in attempts if a["outcome"] in ("wrong_reason", "no_junit")]
+        note = (
+            f" (sau {retried} lần chạy lại; {len(flaky)}/{len(attempts)} lần fail không ở"
+            f" khẳng định, vd {flaky[0]['detail'][:80]})"
+        )
+    if last["outcome"] == "no_junit":
         return Gate(
             "acceptance_fails_before",
             "unknown",
-            f"không có kết quả JUnit trên base: {result.output_tail.strip()[-200:]}",
+            f"không có kết quả JUnit trên base: {last['detail']}{note}",
+            evidence,
         )
-    failed = [o for o in run.outcomes if o.failed]
-    if not failed:
+    if last["outcome"] == "pass":
         return Gate(
             "acceptance_fails_before",
             "fail",
-            "journey PASS trên base: không chứng minh được tính năng/bug",
+            f"journey PASS trên base: không chứng minh được tính năng/bug{note}",
+            evidence,
         )
-    wrong = [o for o in failed if not o.is_assertion]
-    if wrong:
+    if last["outcome"] == "wrong_reason":
         return Gate(
             "acceptance_fails_before",
             "fail",
-            f"journey fail sai lý do trên base"
-            f" ({wrong[0].error_type or wrong[0].status}: {wrong[0].message[:120]})",
-            {"failed": [asdict(o) for o in failed]},
+            f"journey fail sai lý do trên base ({last['detail']}){note}",
+            {**evidence, "failed": last["failed"]},
         )
     return Gate(
         "acceptance_fails_before",
         "pass",
-        f"{len(failed)}/{len(run.outcomes)} test của journey fail ở khẳng định trên base",
-        {"failed": [o.id for o in failed]},
+        f"{last['detail']} test của journey fail ở khẳng định trên base{note}",
+        {**evidence, "failed": last["failed"]},
     )
 
 

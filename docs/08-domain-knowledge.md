@@ -144,6 +144,7 @@ Trạng thái `candidate` và số liệu dùng (`stats`) cập nhật thường
 | | `static.<lệnh>.broken` | Typecheck/lint không chạy được trên base; chỉ đo khi nhánh không sạch (nhánh sạch thì base không được chạy nên giữ nguyên) |
 | | `static.<lệnh>.baseline` | Số dòng lỗi/cảnh báo có sẵn trên base |
 | | `install.broken` | `commands.install` lỗi trên base |
+| | `journey.inconclusive_on_base` | Journey trên base fail **không ở khẳng định** (timeout, môi trường) ở một số lần chạy, kể cả khi lần chạy lại cho kết quả rõ; cộng dồn số lần chạy, số lần chạy lại và nguyên nhân trên cùng commit |
 | `assess --run` (về checkout đang đo) | `<tiêu chí>.ok` / `.fails` | Container build, lệnh test, app khởi chạy, CI; kết quả `unknown` là chưa đo nên không ghi |
 
 - **Cộng dồn trên cùng commit:** kết quả test của base qua nhiều lần đo được gộp (mục `observations` trong facts.yaml). Một test chỉ là "fail sẵn" nếu fail ở **mọi** lượt của **mọi** lần đo; fail ở lượt nào đó thì là "không ổn định". Một lần đo một lượt không đo được độ ổn định nên không rút sự thật về nó. Commit base mới thì đo lại từ đầu.
@@ -154,7 +155,7 @@ Trạng thái `candidate` và số liệu dùng (`stats`) cập nhật thường
 - Xem bằng `proofline knowledge show [repo] [--all]`; `/status` qua ACP hiện tối đa 5 sự thật đang dùng.
 - Chưa nạp vào worker (bước K1).
 
-**Thử trên tiniagent** (base `origin/dev` @ `28e1613`, nhánh `feat/full-flow`): hai lần `verify` ghi lại đúng hai điều đã biết từ lần chạy tay: test không ổn định trên base (lần 1: 0 rồi 23 test fail; lần 2: 1 rồi 2) và `pnpm lint` hỏng sẵn (thiếu `eslint-config-next`). `assess --run` thêm: không có container, `pnpm test` chạy được (94 giây), app khởi chạy ở :3200, chưa có CI. Chính lần thử này cho thấy cần cộng dồn: lần đo thứ hai đã ghi đè "23 test" thành "3 test".
+**Thử trên tiniagent** (base `origin/dev` @ `28e1613`, nhánh `feat/full-flow`): hai lần `verify` ghi lại đúng hai điều đã biết từ lần chạy tay: test không ổn định trên base (lần 1: 0 rồi 23 test fail; lần 2: 1 rồi 2) và `pnpm lint` hỏng sẵn (thiếu `eslint-config-next`). `assess --run` thêm: không có container, `pnpm test` chạy được (94 giây), app khởi chạy ở :3200, chưa có CI. Chính lần thử này cho thấy cần cộng dồn: lần đo thứ hai đã ghi đè "23 test" thành "3 test". Lần đầu, journey trên base còn fail vì hook timeout (không ở khẳng định); từ đó `verify` chạy lại journey trên base trước khi kết luận và ghi `journey.inconclusive_on_base`. Ở lần thử sau khi sửa, journey fail đúng ở khẳng định ngay lần đầu nên không phải chạy lại; đường chạy lại được kiểm bằng test với một journey chập chờn thật (`tests/test_verify.py`).
 
 ## 9. Câu hỏi còn mở
 

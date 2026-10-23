@@ -168,7 +168,7 @@ Harness tự chạy lại mọi kiểm tra trong container sạch, không tin b�
 
 | Gate | Nội dung |
 | :--- | :--- |
-| `repro_fails_on_base` | Test tái hiện chạy trên `base_commit` phải FAIL, và fail ở **assertion** (không tính ImportError, SyntaxError, lỗi môi trường) |
+| `repro_fails_on_base` | Test tái hiện chạy trên `base_commit` phải FAIL, và fail ở **assertion** (không tính ImportError, SyntaxError, lỗi môi trường). Fail không ở khẳng định (vd hook timeout) thì **chạy lại** tối đa `verification.user_journey.base_retries` lần (mặc định 2) trước khi kết luận; báo cáo ghi số lần chạy lại và nguyên nhân |
 | `repro_passes_after_fix` | Test tái hiện PASS trên code đã sửa |
 | `test_integrity` | Không sửa/xóa/skip test cũ, không nới lỏng cấu hình lint/test |
 | `no_regression` | Toàn bộ test suite pass; test vốn đỏ/chập chờn trên base được loại ra |

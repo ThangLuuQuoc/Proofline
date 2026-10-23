@@ -235,6 +235,54 @@ def _base_tests(report: VerifyReport) -> dict[str, Any] | None:
     return None
 
 
+INCONCLUSIVE = ("wrong_reason", "no_junit")
+
+
+def accumulate_journey_runs(facts: FactsFile, report: VerifyReport) -> dict[str, Any] | None:
+    """Gộp các lần chạy journey trên base (gồm lần chạy lại) qua các lần đo trên cùng commit."""
+    gate = next((g for g in report.gates if g.key == "acceptance_fails_before"), None)
+    attempts = (gate.evidence.get("attempts") if gate else None) or []
+    if not attempts:
+        return None
+    key = f"verify.journey@{report.base_ref}"
+    prev = facts.observations.get(key)
+    if not (prev and prev.get("commit") == report.base_sha):
+        prev = {"runs": 0, "inconclusive": 0, "retries": 0, "causes": []}
+    flaky = [a for a in attempts if a["outcome"] in INCONCLUSIVE]
+    causes = list(prev["causes"])
+    for a in flaky:
+        cause = a["detail"][:120]
+        if cause and cause not in causes:
+            causes.append(cause)
+    combined = {
+        "runs": prev["runs"] + len(attempts),
+        "inconclusive": prev["inconclusive"] + len(flaky),
+        "retries": prev["retries"] + len(attempts) - 1,
+        "causes": causes[:5],
+    }
+    facts.observations[key] = {"commit": report.base_sha, **combined}
+    return combined
+
+
+def journey_measurements(report: VerifyReport, journey: dict[str, Any] | None) -> list[Measurement]:
+    if journey is None:
+        return []
+    ref, sha = report.base_ref, report.base_sha[:7]
+    count = journey["inconclusive"]
+    return [
+        Measurement(
+            "journey.inconclusive_on_base",
+            count > 0,
+            f"Journey chạy trên `{ref}` @ {sha} fail không ở khẳng định {count}/{journey['runs']}"
+            f" lần (vd {journey['causes'][0] if journey['causes'] else '?'}); verify đã chạy lại"
+            f" {journey['retries']} lần. Môi trường chập chờn: kết luận cần nhiều lần chạy"
+            if count
+            else "",
+            dict(journey),
+        )
+    ]
+
+
 def accumulate_base_tests(facts: FactsFile, report: VerifyReport) -> dict[str, Any] | None:
     """Gộp kết quả test của base với các lần đo trước **trên cùng commit**: một test chỉ là
     "fail ở mọi lượt" nếu fail ở mọi lượt của mọi lần đo; fail ở lượt nào đó thì không ổn định."""
@@ -391,12 +439,16 @@ def record_verify(
 ) -> list[Change]:
     facts = load_facts(config, target.name)
     base = accumulate_base_tests(facts, report)
+    journey = accumulate_journey_runs(facts, report)
     changes = apply(
         facts,
         (config.workspace / target.local_path).resolve(),
         source="verify",
         scope=Scope(ref=report.base_ref, commit=report.base_sha),
-        measurements=measurements_from_verify(report, base),
+        measurements=[
+            *measurements_from_verify(report, base),
+            *journey_measurements(report, journey),
+        ],
         evidence=_display(config, evidence),
     )
     save_facts(config, facts)
