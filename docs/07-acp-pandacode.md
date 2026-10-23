@@ -155,6 +155,16 @@ PandaCode bản hiện tại chỉ hỗ trợ duyệt dạng có/không qua ACP;
 - `/approve` và `/reject <lý do>` luôn dùng được như đường thay thế, kể cả từ kênh bot.
 - Giao diện duyệt phong phú hơn (xem diff có chú thích, chọn lý do nhanh) là phần **đóng góp lên PandaCode** sau, không chặn tích hợp.
 
+### 4.4. Tính năng của PandaCode đụng với Proofline
+
+Đã đối chiếu mã nguồn PandaCode (commit `d462cfc`):
+
+| Tính năng PandaCode | Đụng ở đâu | Cách xử lý |
+| :--- | :--- | :--- |
+| **Turn checks** (Settings → Agents, mặc định tắt): sau một lượt sạch, chạy test nhanh của repo; fail thì tự gửi prompt "Project checks failed after your last turn…" (`src/turn-checks.ts`) | Tin nhắn tự động này đến đúng lúc Proofline đang chờ lý do từ chối, có thể bị ghi thành **quyết định của người**. Với repo có test fail sẵn (tiniagent: 23) thì gần như chắc chắn xảy ra | Proofline nhận ra tin nhắn này, không coi là câu trả lời, câu hỏi vẫn chờ người. Hướng dẫn: **tắt turn checks** khi dùng Proofline; gate thật chạy bằng `/verify` |
+| **Thư viện Skills/Rules** (`src-tauri/src/skills/adapter.rs`): kích hoạt thì ghi vào `.claude/skills/`, khối trong `CLAUDE.md` (Codex: `.codex/skills`, `AGENTS.md`), ở cấp người dùng (`~/.claude`) hoặc trong checkout | Worker Claude Code của Proofline tự đọc các file này: skill cấp người dùng luôn được nạp, skill cấp project được nạp khi worker chạy trong checkout đó. Harness thật của worker khi đó không do Proofline kiểm soát, kết quả Golden Set không tái lập được | Worker chạy cô lập (chỉ nạp harness của Proofline: guardrails, taste, playbook, kho tri thức), và `harness_version` là dấu vân tay của harness thực tế đã nạp ([03-system-architecture.md](03-system-architecture.md) mục 2.1, 2.5). Skill của PandaCode dành cho chat riêng của người dùng |
+| **Usage ledger / limits** | Worker do Proofline khởi chạy, không qua PandaCode, nên chi phí của nó không hiện trong thống kê của PandaCode | Proofline tự ghi chi phí (bảng `runs`) và báo trong `/status`, digest |
+
 ---
 
 ## 5. Bot

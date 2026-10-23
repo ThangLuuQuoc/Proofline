@@ -192,3 +192,14 @@ def test_verify_is_refused_in_plan_mode_and_guarded_otherwise(setup):
     assert "/verify mul --yes" in last_text(messages)
     assert not (repo / ".proofline/verify/mul.json").exists()
     assert decisions(ws, "run_repo_commands")[-1]["decided_by"] == "agent"
+
+
+def test_a_pandacode_turn_check_is_not_taken_as_the_reject_reason(changed):
+    _, ws, config, sid = changed
+    drive(config, prompt(2, sid, "/spec mul"), answer(1, "reject"))
+    check = "Project checks failed after your last turn (npm test). Fix the failures first."
+    assert "turn checks" in last_text(drive(config, prompt(3, sid, check)))
+    assert "npm test" not in (decisions(ws, "acceptance_approval")[-1]["human_reason"] or "")
+    # The question is still waiting for the person.
+    drive(config, prompt(4, sid, "sai mục tiêu"))
+    assert "sai mục tiêu" in decisions(ws, "acceptance_approval")[-1]["human_reason"]

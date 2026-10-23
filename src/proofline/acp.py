@@ -101,6 +101,8 @@ GIT_INIT_OPTIONS = [
     },
     {"optionId": "cancel", "name": "Không", "kind": "reject_once"},
 ]
+# Tin nhắn client tự gửi như prompt thường (PandaCode turn checks: src/turn-checks.ts).
+CLIENT_AUTOMATED_PREFIXES = ("Project checks failed after your last turn",)
 # Thư mục chỉ có các file này vẫn coi là trống.
 IGNORABLE_FILES = {".DS_Store", "Thumbs.db", "desktop.ini"}
 RUN_OPTIONS = [
@@ -429,6 +431,15 @@ class AcpServer:
             for block in params.get("prompt") or []
             if block.get("type") == "text"
         ).strip()
+        if text.startswith(CLIENT_AUTOMATED_PREFIXES):
+            # Sent by the client, not typed by a person: never an answer to a pending question.
+            self.say(
+                session.session_id,
+                "Tin nhắn này do PandaCode tự gửi (turn checks), không phải câu trả lời của bạn;"
+                " Proofline bỏ qua. Gate thật chạy bằng `/verify`. Khi dùng Proofline, tắt"
+                " Settings → Agents → turn checks.",
+            )
+            return {"stopReason": "end_turn"}
         pending = self._take_pending(session.session_id)
         command, _, rest = text.partition(" ")
         rest = rest.strip()
