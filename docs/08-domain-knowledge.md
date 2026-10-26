@@ -59,6 +59,26 @@ born_from: { task: "<task-id>", golden_case: null }
 stats: { loaded: 0, tasks_passed_first_try: 0, tasks_failed: 0 }
 ```
 
+### 3.1. Script phải khai báo quyền
+
+Mục `kind: script` là code sẽ được chạy lại ở các task sau, nên phải khai báo trước nó cần gì (ý tưởng từ manifest năng lực của plugin trong Cindy). Sandbox chỉ cấp đúng những quyền đó:
+
+```yaml
+kind: script
+entry: scripts/reset-browser-state.ts
+run: "pnpm exec tsx {entry}"
+capabilities:
+  read: ["src/**", "e2e/**"]           # Đọc được; còn lại không mount
+  write: [".proofline/tmp/**"]         # Ghi được; mọi chỗ khác chỉ đọc
+  network: []                          # Domain được gọi; rỗng = không mạng
+  env: ["DATABASE_URL"]                # Chỉ các biến này được truyền vào
+  timeout_seconds: 60
+```
+
+- Script chạy thiếu quyền (đọc ngoài `read`, gọi domain ngoài `network`…) thì **fail**, không tự nới quyền; mục giữ ở `candidate`.
+- Manifest là một phần của đề xuất nâng lên `active`: người duyệt đọc quyền trước khi đọc code. Quyền rộng (`write` ngoài thư mục tạm, có `network`) bị gắn cờ trong Knowledge PR.
+- Ranh giới thật vẫn là container (mạng chặn mặc định, [03-system-architecture.md](03-system-architecture.md) mục 2.5); manifest thu hẹp thêm và làm rõ cho người duyệt, không thay container.
+
 ---
 
 ## 4. Vòng đời
@@ -83,6 +103,28 @@ flowchart LR
    - với script: chạy được trong sandbox, có test.
    Người duyệt từng mục (quyết định `knowledge_update`, trần L2 như `taste_or_playbook_update`).
 4. **Rút khỏi `active`:** fact mới mâu thuẫn, base đổi làm fact hết hạn, mục gắn với tỷ lệ fail cao hơn khi được nạp, hoặc không được dùng trong `knowledge.retire.unused_tasks` task. Rút là tự động nhưng báo trong digest.
+
+### 4.1. Đề xuất chỉ nêu phần đổi (omitted-is-inherited)
+
+Mọi đề xuất sửa kho tri thức (và taste, playbook ở Phase 5) theo hợp đồng của Harness² (`core/tree.py`): **chỉ nêu phần đổi, phần không nhắc tới giữ nguyên**. Đề xuất là danh sách thao tác theo id:
+
+```yaml
+- op: add       # mục mới, đủ frontmatter và bằng chứng
+  item: { id: …, kind: lesson, statement: …, evidence: [ … ] }
+- op: update    # chỉ các trường đổi
+  id: tiniagent-browser-own-agents
+  set: { applies_when: "Viết hoặc sửa journey chạm src/browser/** hoặc e2e/journeys/**" }
+  evidence: [ … ]
+- op: retire    # rút phải ghi rõ
+  id: tiniagent-old-port
+  reason: "Port đã đổi sang 3200"
+  evidence: [ … ]
+```
+
+- Mục không có trong đề xuất **không đổi**: agent không thể làm rơi quy tắc cũ chỉ vì quên chép lại (lỗi thường gặp khi để agent viết lại cả file).
+- **Rút phải ghi rõ** kèm lý do và bằng chứng; nếu không, quy tắc sai sẽ không bao giờ được gỡ.
+- Harness từ chối đề xuất viết lại cả file, thao tác lên id không tồn tại, hoặc `update`/`retire` thiếu bằng chứng; thông báo lỗi trả lại cho agent để sửa (như `validate_tree` của Harness²).
+- Knowledge PR hiển thị theo thao tác (thêm / sửa / rút), nên người duyệt đọc từng thay đổi thay vì một diff lớn.
 
 ---
 
@@ -127,7 +169,7 @@ Trạng thái `candidate` và số liệu dùng (`stats`) cập nhật thường
 | :--- | :--- | :--- | :--- |
 | **K0. Sự thật đo được** ✅ | `verify`/`assess` ghi `facts.yaml` (test fail sẵn, lệnh hỏng trên base, thứ tự test…); `proofline knowledge show`; `/status` hiện các fact của repo | Đã có `verify`, `assess` | Chạy lại `verify` trên tiniagent sinh đúng các fact đã biết bằng tay; fact hết hạn khi base đổi |
 | **K1. Worker nạp kho tri thức** | Nạp `active` theo domain, có giới hạn dung lượng, vào fingerprint harness | Worker (Phase 1) | Trace ghi rõ mục nào được nạp; chạy lại cùng fingerprint ra cùng tập mục |
-| **K2. Ghi nhận và Knowledge PR** | Phản tư có bằng chứng → `candidate`; gộp trùng; PR hằng tuần qua Golden Set của domain; duyệt qua digest/ACP | Golden Set, Lead Agent (Phase 4) | 0 mục `active` thiếu bằng chứng hoặc chưa qua Golden Set |
+| **K2. Ghi nhận và Knowledge PR** | Phản tư có bằng chứng → `candidate`; gộp trùng; đề xuất theo hợp đồng "chỉ nêu phần đổi" (mục 4.1); script có manifest quyền (mục 3.1); PR hằng tuần qua Golden Set của domain; duyệt qua digest/ACP | Golden Set, Lead Agent (Phase 4) | 0 mục `active` thiếu bằng chứng hoặc chưa qua Golden Set |
 | **K3. Propose–Probe–Compose offline** | Tối ưu kho tri thức của một domain trên Golden Set, chọn bằng gate | Golden Set theo domain ≥ 5 case/domain (Phase 5) | pass@1 của domain tăng vượt mức dao động so với trước |
 | **K4. Tri thức theo stack** | Nâng mục giống nhau ở ≥ 2 repo lên `stack/<stack>` | ≥ 2 repo đích cùng stack | Repo mới cùng stack đạt gate lần đầu tốt hơn repo đầu tiên |
 

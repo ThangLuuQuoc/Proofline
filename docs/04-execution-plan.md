@@ -233,7 +233,7 @@ flowchart LR
 
 * **Mục tiêu:** Một worker nhận issue thật, chạy trong container cách ly, mở được PR draft; mọi quyết định được ghi lại ngay từ đầu.
 * **Đầu việc cụ thể:**
-  1. `src/worker.py`: bọc Claude Code headless; nạp `guardrails.md`, `tech-lead-taste.md` và playbook theo loại task; chọn model theo vai trò; ghi trace và chi phí.
+  1. `src/worker.py`: bọc Claude Code headless qua một interface engine mỏng (Phase 1 chỉ làm một engine; xem [03](03-system-architecture.md) mục 2.4); các vai trò bàn giao cho nhau bằng **artifact** trong `<artifacts>/tasks/<task>/`, không chuyển lịch sử hội thoại (mục 2.4b); nạp `guardrails.md`, `tech-lead-taste.md` và playbook theo loại task; chọn model theo vai trò; ghi trace và chi phí.
   2. `src/sandbox.py`: tạo container từ image của repo đích, mount worktree, giới hạn CPU/RAM, chặn mạng ra ngoài trừ API model và registry package được phép.
   3. Thiết lập **GitHub App** quyền tối thiểu; bật **branch protection** cho `main`/`master`.
   4. Cấu hình hook/permission của worker chặn: `git push --force`, push vào nhánh bảo vệ, lệnh merge, đọc file `.env`/secret.
@@ -339,6 +339,7 @@ flowchart LR
   2. **Cập nhật `playbooks/tech-lead-taste.md`:** mỗi nguyên tắc ghi rõ quy tắc, lý do, link bằng chứng và số lần quan sát. Nguyên tắc chỉ chuyển sang `active` khi có ≥ 3 bằng chứng **hoặc** đến từ `/proofline teach`. Thay đổi được đề xuất dạng PR, không ghi trực tiếp.
   3. **Kiểm chứng gu bằng Decision Replay Set** (`evals/decision-replay/`): tập PR lịch sử kèm quyết định thật và lý do của người. Lead Agent với taste mới phải dự đoán quyết định của người **không kém** taste cũ; đồng thời Golden Set không giảm điểm.
   4. **Đề xuất playbook kỹ thuật** (`playbooks/skills/`) đi theo cùng quy trình: PR → Golden Set → người duyệt.
+     - **Hợp đồng "chỉ nêu phần đổi"** (omitted-is-inherited, từ Harness²) cho mọi đề xuất sửa taste, playbook và kho tri thức: đề xuất là danh sách thao tác thêm / sửa / rút theo id; mục không nhắc tới giữ nguyên; **rút phải ghi rõ** kèm lý do và bằng chứng. Đề xuất viết lại cả file bị harness từ chối ([08-domain-knowledge.md](08-domain-knowledge.md) mục 4.1).
   4b. **Kho tri thức theo domain** ([08-domain-knowledge.md](08-domain-knowledge.md), bước K2–K3): phản tư có bằng chứng sau mỗi task → `candidate`; Knowledge PR hằng tuần qua Golden Set **của domain**; tối ưu offline kiểu Propose–Probe–Compose của Harness², chọn bằng gate thật.
   5. Bổ sung case mới vào Golden Set và Decision Replay Set từ việc thật đã xử lý.
   6. Nguyên tắc mâu thuẫn với guardrails bị loại tự động; với team nhiều người, tách nguyên tắc chung của team và sở thích riêng của từng người review.
@@ -423,6 +424,7 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 | Rủi ro | Biện pháp |
 | :--- | :--- |
 | Agent "lách" gate (sửa test, test fail sai lý do) | Integrity gate + kiểm tra loại lỗi + hidden tests trong Golden Set |
+| Dùng gói subscription: chạm giới hạn lượt dùng khi chạy đêm, chi phí từng task không đo được | Mặc định API key; subscription phải bật rõ ràng (`worker.backend`), chi phí ghi là ước lượng, Budget Watcher giới hạn theo token ([03](03-system-architecture.md) mục 2.4) |
 | Agent tự viết kịch bản người dùng "dễ qua" | Kịch bản phải fail trên base; reviewer đối chiếu với mục tiêu issue; giữ lại làm test E2E |
 | App không khởi chạy ổn định trong sandbox | `proofline doctor`, healthcheck, tách `infra_error`; repo chưa ổn định thì không được tự merge |
 | Tự merge gây lỗi | Chỉ vào `develop`/`staging`; điều kiện cứng + điều kiện kiếm được; lấy mẫu 10%; tự hạ mức; kill switch |

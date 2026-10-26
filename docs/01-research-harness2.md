@@ -99,5 +99,6 @@ Trên các benchmark phức tạp mô phỏng môi trường làm việc thực 
 4. **Bằng chứng dạng cây file** cho agent đề xuất (`core/context.py`: task, trajectory, kết quả, harness, thư viện) thay vì nhồi vào prompt.
 5. **Giao diện `BenchmarkAdapter`** (danh sách task, chạy, kết quả, chấm sau khi chọn) làm mẫu cho `eval_runner`.
 6. **Thư viện theo domain, lấy theo cấu trúc thư mục** → kho tri thức theo domain của Proofline (docs/08).
+7. **Hợp đồng "chỉ nêu phần đổi"** (omitted-is-inherited, `core/tree.py`): đề xuất sửa harness chỉ chứa phần thay đổi, phần còn lại kế thừa → áp cho đề xuất sửa kho tri thức, taste, playbook (docs/08 mục 4.1), thêm quy tắc **rút phải ghi rõ**.
 
 Chép code của Harness² thì phải giữ ghi chú giấy phép Apache 2.0.

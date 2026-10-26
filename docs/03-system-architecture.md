@@ -154,7 +154,29 @@ Hệ thống **không cố định model**. Code chỉ gọi model qua tên vai 
 
 * **Thứ tự ưu tiên khi chọn model:** biến môi trường `PROOFLINE_MODEL_<VAI_TRÒ>` → `target_repos[].model_overrides` → `models.roles`.
 * Đổi model mặc định được coi là thay đổi harness: phải chạy lại Golden Set (và Decision Replay Set với `lead_agent`) trước khi áp dụng.
-* Bật prompt caching để giảm chi phí đọc lại ngữ cảnh.
+* Bật prompt caching để giảm chi phí đọc lại ngữ cảnh. Cache gắn với từng model: đổi model giữa chừng là mất cache, nên mỗi vai trò giữ phiên riêng của mình thay vì nối tiếp hội thoại của vai trò khác (mục 2.4b).
+* **Nguồn model (`worker.backend`):** mặc định là **API key tính theo token**. Gói subscription có sẵn của team (Claude/Codex plan) chỉ dùng khi bật rõ ràng và chấp nhận ba điều:
+  - giới hạn lượt dùng của gói không hợp với nhiều worker chạy song song ban đêm; chạm giới hạn thì task dừng giữa chừng;
+  - phải tự kiểm tra điều khoản của nhà cung cấp cho kiểu dùng tự động, nhiều tiến trình;
+  - chi phí từng task **không đo được**: Budget Watcher chuyển sang giới hạn theo token, `runs.cost_usd` ghi là ước lượng, và chỉ số "chi phí / PR được merge" không còn so được với giai đoạn dùng API.
+* **Một engine trước, adapter mỏng:** `worker.py` gọi agent qua một interface nhỏ (khởi chạy, gửi việc, đọc trace và chi phí, huỷ). Phase 1 chỉ làm Claude Code headless. Mỗi tổ hợp agent × model là **một harness khác**: thêm Codex hay fallback sang agent khác chỉ sau khi tổ hợp đó đã chạy Golden Set.
+
+### 2.4b. Bàn giao giữa các vai trò bằng artifact
+Các vai trò (Lead Agent, `fast_probe`, `heavy_coding`, verifier, reviewer) **không chuyển lịch sử hội thoại cho nhau**. Mỗi vai trò đọc và ghi **artifact** trong `<artifacts>/tasks/<task>/` (và nhánh của task); vai trò sau nhận các artifact đó cùng một tóm tắt ngắn, rồi tự đọc code.
+
+| Vai trò | Artifact để lại | Harness kiểm trước khi chuyển bước |
+| :--- | :--- | :--- |
+| Lead Agent (trước khi sửa) | `questions.md`: câu hỏi Tech Lead sẽ hỏi, câu trả lời tìm được, dẫn nguồn (file, dòng, issue) | Có file, đúng schema, mỗi câu trả lời có nguồn |
+| `fast_probe` | Test repro hoặc journey (file trên nhánh) + `repro.md` (lệnh chạy, kết quả) | Test **fail ở khẳng định** trên base (gate `acceptance_fails_before`) |
+| `heavy_coding` | Commit trên nhánh + `notes.md` (quyết định đã chọn, phần chưa làm, rủi ro) | Có commit; journey/test repro không bị sửa |
+| Verifier | `verify/<task>.json` | Do harness tự chạy, không phải agent |
+| Reviewer, Lead Agent (sau) | `review.md`, quyết định "good enough / làm lại" trong `decisions` | Có lý do và dẫn chứng |
+
+Vì sao:
+- **Kiểm lại được:** artifact là thứ harness chạy hoặc đọc được, đúng nguyên tắc "không tin báo cáo của agent"; lịch sử chat thì không.
+- **Độc lập với model:** vai trò sau có thể dùng model hoặc agent khác (fallback) mà không phải dịch lịch sử hội thoại.
+- **Chạy tiếp được:** tiến trình chết hay đổi máy thì task tiếp tục từ artifact cuối cùng (giống phiên ACP lưu trong DB).
+- Mỗi artifact có giới hạn độ dài; thiếu artifact hoặc sai schema thì bước sau không bắt đầu.
 
 ### 2.5. Sandbox & quyền tối thiểu
 * Mỗi worker chạy trong **container riêng** (mount git worktree), có giới hạn CPU/RAM; cổng, database test, cache và **instance app cho User Journey** tách biệt giữa các worker.

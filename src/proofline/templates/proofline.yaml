@@ -82,6 +82,8 @@ readiness:
 # Worker engine: dùng agent có sẵn, không tự viết vòng lặp agent
 worker:
   engine: "claude-code-headless"     # claude-code-headless | claude-agent-sdk
+  backend: "api_key"                 # api_key | subscription (giới hạn lượt dùng, chi phí chỉ ước lượng: docs/03 mục 2.4)
+  handoff: "artifacts"               # Vai trò bàn giao bằng artifact, không chuyển lịch sử hội thoại (docs/03 mục 2.4b)
   permission_mode: "restricted"      # Chặn lệnh nguy hiểm (force push, merge, đọc secret) bằng hook/permission
   playbooks_by_task_type: true
   load_taste: true                   # Nạp playbooks/tech-lead-taste.md vào ngữ cảnh worker
@@ -429,6 +431,15 @@ knowledge:
     unused_tasks: 30                    # Không được nạp trong N task của domain thì rút
     on_contradicting_fact: true
   exclude_on_own_golden_case: true      # Mục sinh từ một case Golden Set không được nạp khi chấm lại case đó
+  proposals:
+    contract: "omitted_is_inherited"   # Chỉ nêu thao tác thêm/sửa/rút theo id; mục không nhắc tới giữ nguyên (docs/08 mục 4.1)
+    explicit_retire: true               # Rút phải ghi rõ, kèm lý do và bằng chứng
+    reject_full_rewrite: true
+  scripts:
+    require_capabilities: true          # read/write/network/env/timeout_seconds (docs/08 mục 3.1)
+    default_network: []                 # Không mạng nếu không khai báo
+    max_timeout_seconds: 300
+    flag_broad_capabilities: true       # Ghi ngoài thư mục tạm hoặc có network → gắn cờ trong Knowledge PR
 
 # Quan sát
 observability:
