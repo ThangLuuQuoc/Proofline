@@ -20,17 +20,21 @@ from proofline.config import (
     resolve_model,
 )
 from proofline.levels import READINESS_LEVELS, ReadinessLevel
-from proofline.state import SchemaVersionError, init_db, record_human_decision, table_names
+from proofline.state import SchemaVersionError, init_db, record_decision, table_names
 from proofline.targets import AddedTarget, add_target, is_git_url
 from proofline.verify import (
     JourneyApproval,
     VerifyContext,
+    approval_choice,
+    approve_commands,
     blob_of,
     chore_manifest,
+    command_snapshot,
     git,
     load_manifest,
     repo_root,
     save_manifest,
+    snapshot_fingerprint,
     verify,
     write_report,
 )
@@ -444,6 +448,23 @@ def _target_for(cfg: ProoflineConfig, candidate: Path, name: str | None):
     raise ConfigError(f"không xác định được repo đích của {candidate}; dùng --repo")
 
 
+def _interactive() -> bool:
+    """Lệnh duyệt chỉ nhận từ terminal tương tác của người. Agent chạy lệnh qua shell không
+    có terminal (Claude Code, CI) nên không duyệt hộ được; kênh còn lại là ACP (PandaCode)."""
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _confirm_by_human(code: str, what: str) -> None:
+    if not _interactive():
+        raise ConfigError(
+            f"Duyệt {what} là quyết định của người: chạy lệnh này trong terminal của bạn (không"
+            " qua agent), hoặc duyệt qua PandaCode (/approve, /commands)."
+        )
+    typed = typer.prompt(f"Gõ {code} để duyệt {what}", default="", show_default=False)
+    if typed.strip() != code:
+        raise ConfigError("Không khớp: chưa duyệt gì.")
+
+
 @spec_app.command("approve")
 def spec_approve(
     spec: SpecArgument,
@@ -451,36 +472,72 @@ def spec_approve(
     path: PathOption = None,
     config: ConfigOption = None,
 ) -> None:
-    """Ghi nhận người duyệt journey hiện tại: lưu git blob vào manifest và vào bảng decisions."""
+    """Người duyệt journey hiện tại (chỉ trong terminal tương tác): ghi quyết định vào bảng
+    decisions và gắn mã quyết định vào manifest; verify đối chiếu hai nơi."""
+    cfg = _load(config)
     try:
         manifest = load_manifest(spec)
         candidate = repo_root(path or spec.parent)
         blob = blob_of(candidate, manifest.journey)
     except ConfigError as exc:
         raise _fail(exc) from exc
-    if manifest.approved_blob == blob:
+    if manifest.approved_blob == blob and manifest.journey_approvals[-1].decision_id:
         typer.echo(f"Journey đã được duyệt ở bản này ({blob[:7]}).")
         return
+    typer.echo(f"Spec `{manifest.name}` · journey {manifest.journey} @ {blob[:7]}")
+    try:
+        _confirm_by_human(blob[:7], f"journey {manifest.journey}")
+    except ConfigError as exc:
+        raise _fail(exc) from exc
     from datetime import UTC, datetime
 
+    decision_id = record_decision(
+        cfg.workspace / cfg.factory.state_db,
+        "acceptance_approval",
+        decided_by="human",
+        human_choice=approval_choice(manifest.name, blob),
+        human_reason=" ".join(filter(None, [note, "[terminal]"])),
+    )
     manifest.journey_approvals.append(
         JourneyApproval(
-            blob=blob, approved_at=datetime.now(UTC).isoformat(timespec="seconds"), note=note
+            blob=blob,
+            approved_at=datetime.now(UTC).isoformat(timespec="seconds"),
+            note=note,
+            decision_id=decision_id,
+            via="terminal",
         )
     )
     save_manifest(spec, manifest)
     typer.secho(f"Đã duyệt journey {manifest.journey} ({blob[:7]}).", fg=typer.colors.GREEN)
+
+
+@target_app.command("approve-commands")
+def target_approve_commands(
+    repo: Annotated[str, typer.Argument(help="Tên repo đích.")],
+    note: Annotated[str, typer.Option(help="Ghi chú của người duyệt.")] = "",
+    config: ConfigOption = None,
+) -> None:
+    """Người duyệt bộ lệnh kiểm tra của repo (chỉ trong terminal tương tác). Verify không chạy
+    lệnh khác bản đã duyệt."""
+    cfg = _load(config)
     try:
-        cfg = load_config(config)
-    except ConfigError:
-        typer.echo("(Không tìm thấy workspace: chưa ghi vào bảng decisions.)")
-        return
-    record_human_decision(
-        cfg.workspace / cfg.factory.state_db,
-        "acceptance_approval",
-        f"approved {manifest.name} {blob[:7]}",
-        note,
-    )
+        target = cfg.target_repo(repo)
+    except ConfigError as exc:
+        raise _fail(exc) from exc
+    snapshot = command_snapshot(cfg, target)
+    fingerprint = snapshot_fingerprint(snapshot)
+    typer.echo(f"Lệnh kiểm tra của `{repo}` (bản {fingerprint[:7]}):")
+    for key, value in snapshot["commands"].items():
+        typer.echo(f"  {key}: {value}")
+    for key, value in snapshot.items():
+        if key != "commands" and value is not None:
+            typer.echo(f"  {key}: {value}")
+    try:
+        _confirm_by_human(fingerprint[:7], "các lệnh này")
+    except ConfigError as exc:
+        raise _fail(exc) from exc
+    approve_commands(cfg, target, "terminal", note)
+    typer.secho(f"Đã duyệt lệnh kiểm tra của {repo} ({fingerprint[:7]}).", fg=typer.colors.GREEN)
 
 
 @app.command("verify")

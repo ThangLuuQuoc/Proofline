@@ -2,7 +2,7 @@
 
 > **Bối cảnh:** lần chạy thật đầu tiên của luồng A ([05-starting-points.md](05-starting-points.md) mục 4) trên một repo dựng từ đầu: [macroeconomics](https://github.com/ThangLuuQuoc/macroeconomics), ứng dụng vĩ mô Việt Nam (FastAPI + Postgres + Next.js), một người dùng. Bốn tính năng đi hết spec → duyệt → làm → `proofline verify`: bảng tổng quan, thẻ thị trường, giả lập kịch bản, kiểm chứng lịch sử (2026-10-27).
 >
-> **Trạng thái:** chế độ nhẹ (mục 5) đã có code; gate chỉ số nghiệp vụ (mục 3) và người viết journey độc lập (mục 4) còn là **thiết kế**.
+> **Trạng thái:** chế độ nhẹ (mục 5) và duyệt chỉ từ người (mục 6) đã có code; gate chỉ số nghiệp vụ (mục 3) và người viết journey độc lập (mục 4) còn là **thiết kế**.
 
 ---
 
@@ -103,13 +103,29 @@ proofline verify .proofline/specs/<tên>.yaml                 # hoặc manifest 
 
 ---
 
-## 6. Thứ tự làm
+## 6. Duyệt chỉ đến từ người, lệnh kiểm tra phải được duyệt — đã làm
+
+**Lỗ hổng (thấy khi đối chiếu một đánh giá bên ngoài với code):** verify độc lập về *báo cáo* (tự chạy lại, không tin lời agent) nhưng chưa độc lập về *quyền*:
+- `proofline spec approve` là lệnh CLI, agent chạy được. Ở macroeconomics, chính agent chạy lệnh này sau khi người nói "duyệt" trong chat.
+- Manifest chứa bản duyệt nằm trên nhánh agent sửa; agent thêm một dòng duyệt là journey mới "đã duyệt".
+- Lệnh test/typecheck/lint nằm trong `target.yaml` của workspace; agent đổi lệnh (vd bỏ bớt test) thì verify vẫn xanh.
+
+**Đã sửa:**
+- **CLI chỉ duyệt trong terminal tương tác** (`stdin` và `stdout` là terminal) và người phải gõ lại mã ngắn hiện trên màn hình (7 ký tự đầu của blob journey hoặc của dấu vân tay lệnh). Shell của agent (Claude Code, CI) không có terminal nên bị từ chối. Kênh còn lại là ACP (PandaCode), đi qua Decision Guard như các quyết định khác.
+- **Bản duyệt trong manifest gắn mã quyết định** (`decision_id`, `via: terminal | acp`). `acceptance_unchanged` chỉ pass khi mã đó có trong bảng `decisions`, do người quyết, đúng loại `acceptance_approval` và đúng `approved <spec> <blob>`. Bản duyệt tự thêm vào manifest → `fail`; dùng lại quyết định của journey cũ → `fail`; bản duyệt cũ chưa gắn mã (trước kiểm tra này) → `unknown`, cần người duyệt lại.
+- **Gate `commands_approved`, chạy đầu tiên ở mọi task (kể cả `chore`):** dấu vân tay (sha256) của lệnh `install`, `test`, `test_junit`, `typecheck`, `lint` cùng các ngưỡng/mẫu của verify (`forbid_test_skip_patterns`, `user_journey.base_retries`, `verification.chore`, `review.risk_score.sensitive_paths`) so với quyết định `commands_approval` mới nhất của người. Khác → `fail`, báo khoá nào đổi và **dừng, không chạy lệnh chưa duyệt**. Chưa từng duyệt → `unknown`. Duyệt bằng `proofline target approve-commands <repo>` (terminal) hoặc `/commands` qua ACP.
+
+**Giới hạn còn lại (nói thẳng):** agent chạy cùng tài khoản hệ điều hành với người vẫn có thể *cố ý* giả terminal hoặc ghi thẳng vào `state/proofline.db`. Các thay đổi trên chặn đường vô tình và đường dễ, và biến việc lách thành hành vi cố ý, để lại dấu. Chặn hẳn cần cách ly: worker chạy trong container không thấy `state/` của workspace và không có terminal (Phase 1, [03-system-architecture.md](03-system-architecture.md) mục 2.5).
+
+---
+
+## 7. Thứ tự làm
 
 1. **Chế độ nhẹ:** rẻ nhất, dùng được ngay hằng ngày.
 2. **Gate `business_metric`:** cần cho spec mô hình nhiều cú sốc của macroeconomics.
 3. **Người viết journey độc lập:** cần thêm vai trò và một model/harness thứ hai; làm trước khi bật tự merge.
 
-## 7. Câu hỏi còn mở
+## 8. Câu hỏi còn mở
 
 1. Metric `live` chạy mất vài phút (backtest có hàng chục lần ước lượng): có cần cache theo (commit, ảnh chụp dữ liệu) không?
 2. `kind: model` do người khai trong spec hay Proofline tự đoán (vd từ thư viện thống kê/ML trong diff)?

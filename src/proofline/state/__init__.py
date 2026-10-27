@@ -129,3 +129,35 @@ def append_decision_reason(db_path: str | Path, decision_id: str, text: str) -> 
             )
     finally:
         conn.close()
+
+
+def get_decision(db_path: str | Path, decision_id: str) -> dict | None:
+    """Một quyết định theo id, hoặc None (kể cả khi chưa có database)."""
+    if not Path(db_path).is_file():
+        return None
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM decisions WHERE decision_id = ?", (decision_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None
+
+
+def latest_human_decision(
+    db_path: str | Path, decision_type: str, choice_prefix: str
+) -> dict | None:
+    """Quyết định mới nhất của người cùng loại, có `human_choice` bắt đầu bằng `choice_prefix`."""
+    if not Path(db_path).is_file():
+        return None
+    conn = connect(db_path)
+    try:
+        row = conn.execute(
+            "SELECT * FROM decisions WHERE decision_type = ? AND decided_by = 'human'"
+            " AND substr(human_choice, 1, ?) = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (decision_type, len(choice_prefix), choice_prefix),
+        ).fetchone()
+    finally:
+        conn.close()
+    return dict(row) if row else None

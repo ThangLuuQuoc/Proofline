@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from proofline import cli
 from proofline.cli import app
 from proofline.config import load_config
 from proofline.junit import TestRun, parse_junit
@@ -17,10 +18,12 @@ from proofline.verify import (
     Gate,
     VerifyContext,
     classify_regressions,
+    command_snapshot,
     gate_fails_before,
     gate_static,
     load_manifest,
     prepare_base,
+    snapshot_fingerprint,
     verify,
 )
 from proofline.workspace import init_workspace
@@ -51,7 +54,7 @@ def write(path: Path, text: str) -> None:
 
 
 @pytest.fixture
-def setup(tmp_path):
+def setup(tmp_path, monkeypatch):
     """Một repo Python nhỏ: base trên main, nhánh feature thêm mul() + test + journey đã duyệt."""
     repo = tmp_path / "calc"
     write(repo / "pytest.ini", "[pytest]\npythonpath = .\n")
@@ -93,12 +96,34 @@ def setup(tmp_path):
     config.write_text(
         config.read_text(encoding="utf-8").replace("target_repos: []\n", target), encoding="utf-8"
     )
-    runner = CliRunner()
-    approved = runner.invoke(
-        app, ["spec", "approve", str(repo / ".proofline/specs/mul.yaml"), "--config", str(config)]
+    as_human_in_terminal(monkeypatch)
+    approve_journey(repo, config)
+    approve_check_commands(config)
+    return repo, ws, config
+
+
+def as_human_in_terminal(monkeypatch) -> None:
+    """CliRunner is not a terminal: pretend a person is typing, as approvals require."""
+    monkeypatch.setattr(cli, "_interactive", lambda: True)
+
+
+def approve_journey(repo: Path, config: Path) -> None:
+    blob = sh(repo, "hash-object", JOURNEY)
+    approved = CliRunner().invoke(
+        app,
+        ["spec", "approve", str(repo / ".proofline/specs/mul.yaml"), "--config", str(config)],
+        input=f"{blob[:7]}\n",
     )
     assert approved.exit_code == 0, approved.output
-    return repo, ws, config
+
+
+def approve_check_commands(config: Path, repo: str = "calc") -> None:
+    cfg = load_config(config)
+    code = snapshot_fingerprint(command_snapshot(cfg, cfg.target_repo(repo)))[:7]
+    approved = CliRunner().invoke(
+        app, ["target", "approve-commands", repo, "--config", str(config)], input=f"{code}\n"
+    )
+    assert approved.exit_code == 0, approved.output
 
 
 def run_verify(repo: Path, config: Path, runs: int = 1):
@@ -165,10 +190,7 @@ def test_journey_failing_for_the_wrong_reason_on_base(setup):
         "from calc import mul\n\n\ndef test_user_can_multiply():\n    assert mul(2, 3) == 6\n",
     )
     commit(repo, "journey imports mul")
-    runner = CliRunner()
-    runner.invoke(
-        app, ["spec", "approve", str(repo / ".proofline/specs/mul.yaml"), "--config", str(config)]
-    )
+    approve_journey(repo, config)
     _, gates = run_verify(repo, config)
     assert gates["acceptance_unchanged"].status == "pass"
     assert gates["acceptance_fails_before"].status == "fail"

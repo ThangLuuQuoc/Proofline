@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from test_verify import PY, commit, sh, write
+from test_verify import PY, approve_check_commands, as_human_in_terminal, commit, sh, write
 from typer.testing import CliRunner
 
 from proofline import knowledge
@@ -19,7 +19,7 @@ CALC = "def add(a, b):\n    return a + b\n"
 
 
 @pytest.fixture
-def chore_repo(tmp_path):
+def chore_repo(tmp_path, monkeypatch):
     """Repo Python nhỏ trên main, đang ở nhánh chore/tidy chưa có thay đổi."""
     repo = tmp_path / "calc"
     write(repo / "pytest.ini", "[pytest]\npythonpath = .\n")
@@ -46,6 +46,8 @@ def chore_repo(tmp_path):
     config.write_text(
         config.read_text(encoding="utf-8").replace("target_repos: []\n", target), encoding="utf-8"
     )
+    as_human_in_terminal(monkeypatch)
+    approve_check_commands(config)
     return repo, config
 
 
@@ -71,7 +73,7 @@ def test_small_fix_passes_with_the_light_gates(chore_repo):
     report, gates = run_chore(repo, config, runs=2)
     assert report.status == "pass", report.to_markdown()
     assert report.spec == "chore-chore-tidy" and report.task_type == "chore"
-    assert list(gates) == ["chore_scope", "test_integrity", "no_regression"]
+    assert list(gates) == ["commands_approved", "chore_scope", "test_integrity", "no_regression"]
     assert gates["chore_scope"].evidence["code_lines"] == 1
     assert report.to_markdown().startswith("## Proofline verify: chore-chore-tidy (chore)")
 

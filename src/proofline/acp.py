@@ -35,10 +35,14 @@ from proofline.verify import (
     JourneyApproval,
     SpecManifest,
     VerifyContext,
+    approval_choice,
+    approve_commands,
     blob_of,
+    command_snapshot,
     git,
     load_manifest,
     save_manifest,
+    snapshot_fingerprint,
     verify,
     write_report,
 )
@@ -77,6 +81,7 @@ COMMANDS = [
         "description": "Từ chối journey, kèm lý do.",
         "input": {"hint": "[tên spec] <lý do>"},
     },
+    {"name": "commands", "description": "Xem và duyệt các lệnh kiểm tra mà verify sẽ chạy."},
     {
         "name": "verify",
         "description": "Chạy các gate của task (chạy lệnh của repo; cần bạn cho phép).",
@@ -452,6 +457,7 @@ class AcpServer:
             "approve": lambda: self.cmd_approve(session, rest),
             "reject": lambda: self.cmd_reject(session, rest),
             "verify": lambda: self.cmd_verify(session, rest),
+            "commands": lambda: self.cmd_commands(session, rest),
             "help": lambda: self.cmd_help(session),
         }
         name = command.removeprefix("/")
@@ -587,17 +593,23 @@ class AcpServer:
         note: str,
         channel: str,
     ) -> str:
-        manifest.journey_approvals.append(
-            JourneyApproval(blob=blob, approved_at=_now(), note=note or f"qua ACP ({channel})")
-        )
-        save_manifest(path, manifest)
         decision_id = record_decision(
             self.db_path,
             "acceptance_approval",
             decided_by="human",
-            human_choice=f"approved {manifest.name} {blob[:7]}",
+            human_choice=approval_choice(manifest.name, blob),
             human_reason=" ".join(filter(None, [note, f"[{channel}]"])),
         )
+        manifest.journey_approvals.append(
+            JourneyApproval(
+                blob=blob,
+                approved_at=_now(),
+                note=note or f"qua ACP ({channel})",
+                decision_id=decision_id,
+                via="acp",
+            )
+        )
+        save_manifest(path, manifest)
         self.say(session.session_id, f"✅ Đã duyệt journey `{manifest.journey}` ({blob[:7]}).")
         return decision_id
 
@@ -1044,6 +1056,52 @@ class AcpServer:
                 " đăng ký (chỉ ghi vào workspace).",
             )
         return target
+
+    def cmd_commands(self, session: Session, args: str) -> None:
+        """Xem và duyệt bộ lệnh kiểm tra của repo (verify không chạy lệnh chưa được duyệt)."""
+        target = self._require_repo(session)
+        if target is None:
+            return
+        sid = session.session_id
+        snapshot = command_snapshot(self.config, target)
+        fingerprint = snapshot_fingerprint(snapshot)
+        lines = [f"**Lệnh kiểm tra của `{target.name}`** (bản `{fingerprint[:7]}`)"]
+        lines += [f"- `{k}`: `{v}`" for k, v in snapshot["commands"].items()]
+        lines += [f"- {k}: `{v}`" for k, v in snapshot.items() if k != "commands" and v is not None]
+        self.say(sid, "\n".join(lines))
+        if args.strip() == "--show":
+            return
+        content = [
+            {
+                "type": "content",
+                "content": {
+                    "type": "text",
+                    "text": (
+                        "Duyệt các lệnh này làm thước đo của verify. Đổi lệnh (vd bỏ bớt test)"
+                        " sau khi duyệt thì verify dừng và chờ bạn duyệt lại."
+                    ),
+                },
+            }
+        ]
+        decision = self.ask(
+            session, f"Duyệt lệnh kiểm tra: {target.name}", content, APPROVE_OPTIONS
+        )
+        if decision.option is None:
+            self.say(sid, "Chưa có quyết định (đã huỷ).")
+        elif decision.suspected_auto:
+            self._guard_refused(session, "commands_approval", decision, "/commands")
+        elif decision.option in ("approve", "approve_note"):
+            approve_commands(self.config, target, "acp")
+            self.say(sid, f"✅ Đã duyệt lệnh kiểm tra ({fingerprint[:7]}).")
+        else:
+            record_decision(
+                self.db_path,
+                "commands_approval",
+                decided_by="human",
+                human_choice=f"rejected commands {target.name} {fingerprint}",
+                human_reason="[acp]",
+            )
+            self.say(sid, "Đã ghi: không duyệt các lệnh này. Verify sẽ báo chưa được duyệt.")
 
     def cmd_help(self, session: Session) -> None:
         lines = ["Lệnh Proofline:"] + [f"- `/{c['name']}`: {c['description']}" for c in COMMANDS]

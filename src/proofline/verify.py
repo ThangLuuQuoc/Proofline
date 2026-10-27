@@ -20,6 +20,7 @@ Base chạy trên bản clone riêng trong workspace (không thêm worktree vào
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -37,6 +38,7 @@ from pydantic import BaseModel, Field, ValidationError
 from proofline.config import ConfigError, ProoflineConfig, TargetRepo
 from proofline.junit import TestRun, parse_junit
 from proofline.proc import CommandResult, run_command
+from proofline.state import get_decision, latest_human_decision, record_decision
 
 Status = Literal["pass", "fail", "unknown"]
 COMMAND_TIMEOUT = 1800.0
@@ -91,6 +93,9 @@ class JourneyApproval(BaseModel):
     blob: str
     approved_at: str
     note: str = ""
+    # Quyết định của người trong state/proofline.db; verify đối chiếu, không tin riêng manifest.
+    decision_id: str = ""
+    via: str = ""  # terminal | acp
 
 
 class SpecManifest(BaseModel):
@@ -226,6 +231,10 @@ class VerifyContext:
         return max(0, int(value))
 
     @property
+    def db_path(self) -> Path:
+        return self.config.workspace / self.config.factory.state_db
+
+    @property
     def work_dir(self) -> Path:
         return self.config.workspace / VERIFY_DIR / self.target.name
 
@@ -305,7 +314,113 @@ def _install(ctx: VerifyContext, cwd: Path, label: str) -> Gate | None:
     )
 
 
+# ---- Lệnh kiểm tra đã được người duyệt -------------------------------------------------
+
+# Lệnh verify chạy để ra kết luận: đổi chúng (vd bỏ bớt test) là đổi thước đo.
+CHECK_COMMANDS = ("install", "test", "test_junit", "typecheck", "lint")
+
+
+def command_snapshot(config: ProoflineConfig, target: TargetRepo) -> dict[str, Any]:
+    """Mọi thứ quyết định verify kết luận gì: lệnh của repo và các ngưỡng/mẫu của verify."""
+    return {
+        "commands": {k: target.commands[k] for k in CHECK_COMMANDS if k in target.commands},
+        "skip_patterns": config.extra_value(
+            "verification", "forbid_test_skip_patterns", default=None
+        ),
+        "base_retries": config.extra_value(
+            "verification", "user_journey", "base_retries", default=None
+        ),
+        "chore": config.extra_value("verification", "chore", default=None),
+        "sensitive_paths": config.extra_value(
+            "review", "risk_score", "sensitive_paths", default=None
+        ),
+    }
+
+
+def snapshot_fingerprint(snapshot: dict[str, Any]) -> str:
+    canonical = json.dumps(snapshot, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def commands_choice_prefix(repo: str) -> str:
+    return f"approved commands {repo} "
+
+
+def approved_snapshot_path(config: ProoflineConfig, repo: str) -> Path:
+    return config.workspace / "state" / "approved-commands" / f"{repo}.json"
+
+
+def approve_commands(config: ProoflineConfig, target: TargetRepo, via: str, note: str = "") -> str:
+    """Ghi quyết định của người duyệt bộ lệnh kiểm tra hiện tại. Chỉ gọi từ kênh của người
+    (terminal tương tác, ACP); bản chụp lệnh lưu cạnh để verify chỉ ra lệnh nào đã đổi."""
+    snapshot = command_snapshot(config, target)
+    fingerprint = snapshot_fingerprint(snapshot)
+    decision_id = record_decision(
+        config.workspace / config.factory.state_db,
+        "commands_approval",
+        decided_by="human",
+        human_choice=commands_choice_prefix(target.name) + fingerprint,
+        human_reason=" ".join(filter(None, [note, f"[{via}]"])),
+    )
+    path = approved_snapshot_path(config, target.name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+    return decision_id
+
+
+def gate_commands_approved(ctx: VerifyContext) -> Gate:
+    snapshot = command_snapshot(ctx.config, ctx.target)
+    current = snapshot_fingerprint(snapshot)
+    row = latest_human_decision(
+        ctx.db_path, "commands_approval", commands_choice_prefix(ctx.target.name)
+    )
+    if row is None:
+        return Gate(
+            "commands_approved",
+            "unknown",
+            f"lệnh kiểm tra của repo chưa được người duyệt (bản hiện tại {current[:7]}): chạy"
+            f" `proofline target approve-commands {ctx.target.name}` trong terminal, hoặc"
+            " /commands qua ACP",
+            {"fingerprint": current},
+        )
+    approved = row["human_choice"].rsplit(" ", 1)[-1]
+    evidence = {"fingerprint": current, "approved": approved, "decision_id": row["decision_id"]}
+    if approved == current:
+        return Gate(
+            "commands_approved",
+            "pass",
+            f"lệnh kiểm tra đúng bản người đã duyệt ({current[:7]}, {row['created_at'][:10]})",
+            evidence,
+        )
+    changed = "không đọc được bản đã duyệt để so chi tiết"
+    path = approved_snapshot_path(ctx.config, ctx.target.name)
+    try:
+        before = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        before = None
+    if isinstance(before, dict) and snapshot_fingerprint(before) == approved:
+        keys = [
+            f"commands.{k}"
+            for k in sorted({*before.get("commands", {}), *snapshot["commands"]})
+            if before.get("commands", {}).get(k) != snapshot["commands"].get(k)
+        ] + [k for k in snapshot if k != "commands" and before.get(k) != snapshot[k]]
+        changed = f"đã đổi: {', '.join(keys)}"
+        evidence["changed"] = keys
+    return Gate(
+        "commands_approved",
+        "fail",
+        f"lệnh kiểm tra khác bản người đã duyệt ({current[:7]} ≠ {approved[:7]}; {changed});"
+        " không chạy lệnh chưa được duyệt, cần người duyệt lại",
+        evidence,
+    )
+
+
 # ---- Gate ------------------------------------------------------------------------------
+
+
+def approval_choice(name: str, blob: str) -> str:
+    """`human_choice` của quyết định duyệt journey (CLI và ACP ghi giống nhau)."""
+    return f"approved {name} {blob[:7]}"
 
 
 def gate_acceptance_unchanged(ctx: VerifyContext) -> Gate:
@@ -316,11 +431,39 @@ def gate_acceptance_unchanged(ctx: VerifyContext) -> Gate:
         )
     current = blob_of(ctx.candidate, ctx.manifest.journey)
     if current == approved:
+        # The manifest lives on the branch the agent edits: the approval only counts if the
+        # human decision it points to is in the decisions table.
+        entry = ctx.manifest.journey_approvals[-1]
+        evidence = {"blob": current, "decision_id": entry.decision_id, "via": entry.via}
+        if not entry.decision_id:
+            return Gate(
+                "acceptance_unchanged",
+                "unknown",
+                f"journey đúng bản {approved[:7]} trong manifest, nhưng bản duyệt không gắn quyết"
+                " định của người (ghi trước khi có kiểm tra này); người duyệt lại bằng"
+                " `proofline spec approve` trong terminal hoặc /approve qua ACP",
+                evidence,
+            )
+        row = get_decision(ctx.db_path, entry.decision_id)
+        if not (
+            row
+            and row["decided_by"] == "human"
+            and row["decision_type"] == "acceptance_approval"
+            and row["human_choice"] == approval_choice(ctx.manifest.name, current)
+        ):
+            return Gate(
+                "acceptance_unchanged",
+                "fail",
+                f"bản duyệt {approved[:7]} trong manifest không khớp quyết định nào của người"
+                f" trong sổ quyết định ({entry.decision_id[:8]})",
+                evidence,
+            )
         return Gate(
             "acceptance_unchanged",
             "pass",
-            f"journey đúng bản đã duyệt ({approved[:7]})",
-            {"blob": current},
+            f"journey đúng bản người đã duyệt ({approved[:7]}, qua {entry.via or '?'},"
+            f" {row['created_at'][:10]})",
+            evidence,
         )
     return Gate(
         "acceptance_unchanged",
@@ -734,7 +877,14 @@ def verify(ctx: VerifyContext) -> VerifyReport:
     head_sha = git(["rev-parse", "HEAD"], ctx.candidate)
     if not (ctx.candidate / ctx.manifest.journey).is_file():
         raise ConfigError(f"không thấy journey {ctx.manifest.journey} trên nhánh")
-    gates: list[Gate] = [gate_acceptance_unchanged(ctx), *gate_test_changes(ctx, base_sha)]
+    commands = gate_commands_approved(ctx)
+    gates: list[Gate] = [
+        commands,
+        gate_acceptance_unchanged(ctx),
+        *gate_test_changes(ctx, base_sha),
+    ]
+    if commands.status == "fail":
+        return _report(ctx, base_sha, head_sha, gates, installed=False)
 
     base = prepare_base(ctx, base_sha)
     for label, cwd in (("base", base), ("head", ctx.candidate)):
@@ -750,7 +900,18 @@ def verify(ctx: VerifyContext) -> VerifyReport:
         gate = gate_static(ctx, base, name)
         if gate:
             gates.append(gate)
+    return _report(
+        ctx,
+        base_sha,
+        head_sha,
+        gates,
+        installed=ctx.install and bool(ctx.target.commands.get("install")),
+    )
 
+
+def _report(
+    ctx: VerifyContext, base_sha: str, head_sha: str, gates: list[Gate], *, installed: bool
+) -> VerifyReport:
     return VerifyReport(
         spec=ctx.manifest.name,
         repo=ctx.target.name,
@@ -760,7 +921,8 @@ def verify(ctx: VerifyContext) -> VerifyReport:
         runs=ctx.runs,
         gates=gates,
         verified_at=datetime.now(UTC).isoformat(timespec="seconds"),
-        installed=ctx.install and bool(ctx.target.commands.get("install")),
+        installed=installed,
+        task_type=ctx.manifest.task_type,
     )
 
 
@@ -777,12 +939,15 @@ def verify_chore(ctx: VerifyContext) -> VerifyReport:
     """Chế độ nhẹ: không journey; base chỉ được chuẩn bị (clone, cài) khi thật sự cần."""
     base_sha = git(["rev-parse", f"{ctx.manifest.base}^{{commit}}"], ctx.candidate)
     head_sha = git(["rev-parse", "HEAD"], ctx.candidate)
+    commands = gate_commands_approved(ctx)
+    scope = gate_chore_scope(ctx, base_sha)
     gates: list[Gate] = [
-        gate_chore_scope(ctx, base_sha),
+        commands,
+        scope,
         *(g for g in gate_test_changes(ctx, base_sha) if g.key == "test_integrity"),
     ]
     installed = False
-    if gates[0].status != "fail":
+    if "fail" not in (commands.status, scope.status):
         prepared: list[Path] = []
 
         def base() -> Path:
@@ -807,18 +972,7 @@ def verify_chore(ctx: VerifyContext) -> VerifyReport:
             if gate:
                 gates.append(gate)
         installed = bool(prepared) and ctx.install and bool(ctx.target.commands.get("install"))
-    return VerifyReport(
-        spec=ctx.manifest.name,
-        repo=ctx.target.name,
-        base_ref=ctx.manifest.base,
-        base_sha=base_sha,
-        head_sha=head_sha,
-        runs=ctx.runs,
-        gates=gates,
-        verified_at=datetime.now(UTC).isoformat(timespec="seconds"),
-        installed=installed,
-        task_type="chore",
-    )
+    return _report(ctx, base_sha, head_sha, gates, installed=installed)
 
 
 def write_report(report: VerifyReport, out_dir: Path) -> tuple[Path, Path]:

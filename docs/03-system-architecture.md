@@ -195,6 +195,7 @@ Harness tự chạy lại mọi kiểm tra trong container sạch, không tin b�
 | `test_integrity` | Không sửa/xóa/skip test cũ, không nới lỏng cấu hình lint/test |
 | `no_regression` | Toàn bộ test suite pass; test vốn đỏ/chập chờn trên base được loại ra |
 | `no_new_static_warnings` | Số cảnh báo lint/typecheck không tăng so với base (tính theo delta) |
+| `commands_approved` | Lệnh kiểm tra của repo (test, typecheck, lint, install) và ngưỡng của verify đúng bản người đã duyệt (dấu vân tay); khác thì dừng, không chạy lệnh chưa duyệt ([09](09-lessons-macroeconomics.md) mục 6) |
 | `user_journey` | Kịch bản người dùng fail trên base, pass sau fix; không lỗi console/5xx/exception mới; thời gian phản hồi không chậm hơn ngưỡng (chi tiết ở 2.7) |
 
 **Gate riêng theo loại task:**
@@ -202,7 +203,7 @@ Harness tự chạy lại mọi kiểm tra trong container sạch, không tin b�
 | Loại task | Gate | Nội dung |
 | :--- | :--- | :--- |
 | `feature` | `acceptance_fails_before` / `acceptance_passes_after` | Acceptance journey **đã được người duyệt** fail trên base (tính năng chưa có), pass sau khi làm |
-| `feature` | `acceptance_unchanged` | Agent không được sửa acceptance journey đã duyệt |
+| `feature` | `acceptance_unchanged` | Agent không được sửa acceptance journey đã duyệt; bản duyệt trong manifest phải khớp một quyết định của người trong bảng `decisions` (duyệt chỉ qua terminal tương tác hoặc ACP) |
 | `feature` | `new_tests_added`, `existing_journeys_pass` | Có test mới cho phần code thêm vào; kịch bản của tính năng cũ vẫn pass |
 | `characterization` | `no_product_code_changed`, `new_tests_pass_on_base` | Chỉ thêm test/kịch bản ghi lại hành vi hiện tại, không đổi code sản phẩm; test mới pass trên chính base |
 | `ci_setup` | `ci_green_on_branch` | CI mới chạy xanh trên nhánh của PR |
