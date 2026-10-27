@@ -215,6 +215,7 @@ flowchart TD
 * Outer Loop: [06-the-outer-loop.md](docs/06-the-outer-loop.md)
 * Tích hợp ACP với PandaCode (board, duyệt, bot, GitHub): [07-acp-pandacode.md](docs/07-acp-pandacode.md)
 * Kho tri thức theo domain (tự cải thiện có kiểm chứng): [08-domain-knowledge.md](docs/08-domain-knowledge.md)
+* Bài học từ dự án macroeconomics (chỉ số nghiệp vụ, journey độc lập, chế độ nhẹ): [09-lessons-macroeconomics.md](docs/09-lessons-macroeconomics.md)
 * Config mẫu: [proofline.yaml](src/proofline/templates/proofline.yaml)
 * Chốt an toàn (mẫu): [guardrails.md](src/proofline/templates/playbooks/guardrails.md)
 * Gu Tech Lead (mẫu): [tech-lead-taste.md](src/proofline/templates/playbooks/tech-lead-taste.md)

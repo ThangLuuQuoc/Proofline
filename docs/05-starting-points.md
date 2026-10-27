@@ -163,6 +163,8 @@ Tính năng mới không có "bug để tái hiện", nên nguyên tắc repro �
 
 Ở luồng B, issue `type:feature` do người tạo cũng phải có acceptance journey trước khi vào swarm: Lead Agent soạn từ mô tả issue, người duyệt (quyết định `acceptance_approval`, mức trần L1).
 
+**Giới hạn đã thấy khi chạy thật** ([09-lessons-macroeconomics.md](09-lessons-macroeconomics.md)): gate chứng minh tính năng làm đúng như journey, không chứng minh nó có ích; journey do chính worker viết thì có chung điểm mù. Doc 09 đề xuất gate `business_metric`, người viết journey độc lập và chế độ nhẹ `chore`.
+
 ---
 
 ## 8. Golden Set tổng hợp
