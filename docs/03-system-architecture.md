@@ -207,7 +207,7 @@ Harness tự chạy lại mọi kiểm tra trong container sạch, không tin b�
 | `feature` | `new_tests_added`, `existing_journeys_pass` | Có test mới cho phần code thêm vào; kịch bản của tính năng cũ vẫn pass |
 | `characterization` | `no_product_code_changed`, `new_tests_pass_on_base` | Chỉ thêm test/kịch bản ghi lại hành vi hiện tại, không đổi code sản phẩm; test mới pass trên chính base |
 | `ci_setup` | `ci_green_on_branch` | CI mới chạy xanh trên nhánh của PR |
-| `feature` (dự kiến) | `business_metric` | Chỉ số nghiệp vụ người đã duyệt trong spec đạt ngưỡng và không xấu hơn base ([09-lessons-macroeconomics.md](09-lessons-macroeconomics.md) mục 3) |
+| `feature` | `metrics_unchanged`, `metric_<tên>` | Chỉ số nghiệp vụ người đã duyệt cùng journey (định nghĩa + code tính, bị khoá) đạt ngưỡng và không xấu hơn base; spec `kind: model` bắt buộc có ([09-lessons-macroeconomics.md](09-lessons-macroeconomics.md) mục 3) |
 | `feature` (dự kiến) | `acceptance_independent` | Journey do vai trò khác worker viết, chỉ từ spec (mục 4 của doc 09) |
 | `chore` | `chore_scope`, `test_integrity`, `no_regression`, `static_*` | Thay đổi nhỏ không đổi hành vi người dùng, không cần spec/journey; `chore_scope` đo diff (số dòng code, vùng nhạy cảm, lối vào mới). `proofline verify --chore` (mục 5 của doc 09) |
 

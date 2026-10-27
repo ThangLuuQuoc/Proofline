@@ -53,7 +53,14 @@ def git_default_branch(repo: Path) -> str | None:
     ):
         try:
             out = subprocess.run(
-                args, cwd=repo, capture_output=True, text=True, timeout=10, check=False
+                args,
+                cwd=repo,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=10,
+                check=False,
             )
         except (OSError, subprocess.TimeoutExpired):
             return None

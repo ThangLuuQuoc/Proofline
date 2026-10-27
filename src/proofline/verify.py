@@ -37,6 +37,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from proofline.config import ConfigError, ProoflineConfig, TargetRepo
 from proofline.junit import TestRun, parse_junit
+from proofline.metrics import MetricError, MetricSpec, extract, fingerprint
 from proofline.proc import CommandResult, run_command
 from proofline.state import get_decision, latest_human_decision, record_decision
 
@@ -96,6 +97,9 @@ class JourneyApproval(BaseModel):
     # Quyết định của người trong state/proofline.db; verify đối chiếu, không tin riêng manifest.
     decision_id: str = ""
     via: str = ""  # terminal | acp
+    # Chỉ số nghiệp vụ được duyệt cùng journey: dấu vân tay định nghĩa + blob code tính chúng.
+    metrics: str = ""
+    metric_files: dict[str, str] = Field(default_factory=dict)
 
 
 class SpecManifest(BaseModel):
@@ -106,6 +110,9 @@ class SpecManifest(BaseModel):
     spec: str | None = None
     base: str
     journey: str = ""  # chore: không có journey
+    # model: dự báo, xếp hạng, gợi ý, chấm điểm; phải có ít nhất một chỉ số nghiệp vụ.
+    kind: Literal["", "model"] = ""
+    metrics: list[MetricSpec] = Field(default_factory=list)
     journey_approvals: list[JourneyApproval] = Field(default_factory=list)
 
     @property
@@ -131,7 +138,15 @@ def save_manifest(path: Path, manifest: SpecManifest) -> None:
 
 
 def git(args: list[str], cwd: Path) -> str:
-    out = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=False)
+    out = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     if out.returncode != 0:
         raise ConfigError(f"git {' '.join(args)} lỗi: {out.stderr.strip()[-300:]}")
     return out.stdout.strip()
@@ -418,9 +433,26 @@ def gate_commands_approved(ctx: VerifyContext) -> Gate:
 # ---- Gate ------------------------------------------------------------------------------
 
 
-def approval_choice(name: str, blob: str) -> str:
+def approval_choice(name: str, blob: str, metrics: str = "") -> str:
     """`human_choice` của quyết định duyệt journey (CLI và ACP ghi giống nhau)."""
-    return f"approved {name} {blob[:7]}"
+    return f"approved {name} {blob[:7]}" + (f" metrics {metrics}" if metrics else "")
+
+
+def metric_lock(repo: Path, manifest: SpecManifest) -> tuple[str, dict[str, str]]:
+    """Dấu vân tay chỉ số của spec trên checkout `repo`, và blob từng file code tính chúng."""
+    files: dict[str, str] = {}
+    for metric in manifest.metrics:
+        for rel in metric.files:
+            files[rel] = blob_of(repo, rel) if (repo / rel).is_file() else "absent"
+    return fingerprint(manifest.metrics, files), files
+
+
+def check_metrics_declared(manifest: SpecManifest) -> None:
+    if manifest.kind == "model" and not manifest.metrics:
+        raise ConfigError(
+            f"spec {manifest.name} là kind: model nhưng chưa khai báo metrics; mô hình phải có"
+            " thước đo có ích (docs/09 mục 3) trước khi duyệt"
+        )
 
 
 def gate_acceptance_unchanged(ctx: VerifyContext) -> Gate:
@@ -449,7 +481,7 @@ def gate_acceptance_unchanged(ctx: VerifyContext) -> Gate:
             row
             and row["decided_by"] == "human"
             and row["decision_type"] == "acceptance_approval"
-            and row["human_choice"] == approval_choice(ctx.manifest.name, current)
+            and row["human_choice"] == approval_choice(ctx.manifest.name, current, entry.metrics)
         ):
             return Gate(
                 "acceptance_unchanged",
@@ -472,6 +504,110 @@ def gate_acceptance_unchanged(ctx: VerifyContext) -> Gate:
         " đề xuất thay đổi cho người duyệt",
         {"blob": current, "approved": approved},
     )
+
+
+def gate_metrics_unchanged(ctx: VerifyContext) -> Gate | None:
+    """Định nghĩa chỉ số và code tính chúng đúng bản người đã duyệt cùng journey."""
+    entry = ctx.manifest.journey_approvals[-1] if ctx.manifest.journey_approvals else None
+    approved = entry.metrics if entry else ""
+    if not ctx.manifest.metrics and not approved:
+        return None
+    current, files = metric_lock(ctx.candidate, ctx.manifest)
+    if current == approved:
+        names = ", ".join(m.name for m in ctx.manifest.metrics)
+        return Gate(
+            "metrics_unchanged", "pass", f"chỉ số đúng bản đã duyệt ({names})", {"fp": current}
+        )
+    before = entry.metric_files if entry else {}
+    changed = sorted(f for f in {*before, *files} if before.get(f) != files.get(f))
+    what = f"code tính chỉ số đã đổi: {', '.join(changed)}" if changed else "định nghĩa đã đổi"
+    return Gate(
+        "metrics_unchanged",
+        "fail",
+        f"chỉ số khác bản người đã duyệt ({what}); đổi thước đo phải xin duyệt lại",
+        {"fp": current, "approved": approved, "changed_files": changed},
+    )
+
+
+def _measure(ctx: VerifyContext, cwd: Path, metric: MetricSpec, label: str) -> dict[str, Any]:
+    out = ctx.work_dir / "metrics" / f"{label}-{metric.name}.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.unlink(missing_ok=True)
+    result = ctx.runner(metric.command.replace("{out}", _quote(out)), cwd, COMMAND_TIMEOUT)
+    if not result.ok:
+        raise MetricError(f"lệnh đo lỗi (exit {result.exit_code}): {result.output_tail[-160:]}")
+    try:
+        data = json.loads(out.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise MetricError(f"không đọc được JSON lệnh đo ghi ra: {exc}") from exc
+    snapshot = data.get("data_snapshot") if isinstance(data, dict) else None
+    return {"value": extract(data, metric.value), "data_snapshot": snapshot}
+
+
+def waiver_choice(spec: str, metric: str, head_sha: str) -> str:
+    """Người chấp nhận ship dù chỉ số không đạt, chỉ cho đúng một commit của nhánh."""
+    return f"waived {spec} {metric} {head_sha[:7]}"
+
+
+def gate_metric(ctx: VerifyContext, base: BaseCheckout, metric: MetricSpec, head_sha: str) -> Gate:
+    key = f"metric_{metric.name}"
+    blocked: Status = "fail" if metric.is_blocking else "unknown"
+    note = "" if metric.is_blocking else " (không chặn)"
+    ctx.log(f"Chỉ số {metric.name} ({metric.kind}) trên nhánh")
+    try:
+        head = _measure(ctx, ctx.candidate, metric, "head")
+    except MetricError as exc:
+        return Gate(key, blocked, f"không đo được trên nhánh: {exc}{note}", {"kind": metric.kind})
+    ctx.log(f"Chỉ số {metric.name} trên base")
+    base_result: dict[str, Any] | None
+    try:
+        base_result = _measure(ctx, _checkout(base), metric, "base")
+        base_text = f"base {base_result['value']:.4g}"
+    except MetricError as exc:
+        base_result = None  # base chưa có chỉ số này: chỉ xét ngưỡng
+        base_text = f"base không đo được ({str(exc)[:80]})"
+    value = head["value"]
+    evidence: dict[str, Any] = {
+        "kind": metric.kind,
+        "head": value,
+        "base": base_result["value"] if base_result else None,
+        "threshold": metric.threshold.model_dump(exclude_none=True),
+        "better": metric.direction,
+        "data_snapshot": head["data_snapshot"],
+    }
+    summary = f"nhánh {value:.4g} (ngưỡng {metric.threshold_text()}), {base_text}"
+    if (
+        base_result
+        and metric.kind == "live"
+        and base_result["data_snapshot"] != head["data_snapshot"]
+    ):
+        return Gate(
+            key,
+            "unknown",
+            f"{summary}; base và nhánh đo trên hai ảnh chụp dữ liệu khác nhau"
+            f" ({base_result['data_snapshot']} ≠ {head['data_snapshot']}), không so được",
+            evidence,
+        )
+    problems = []
+    if not metric.meets_threshold(value):
+        problems.append("không đạt ngưỡng")
+    if base_result and metric.worse_than(value, base_result["value"]):
+        problems.append("xấu hơn base")
+    if not problems:
+        return Gate(key, "pass", summary, evidence)
+    waiver = latest_human_decision(
+        ctx.db_path, "metric_waiver", waiver_choice(ctx.manifest.name, metric.name, head_sha)
+    )
+    if waiver:
+        evidence["waiver"] = waiver["decision_id"]
+        return Gate(
+            key,
+            "pass",
+            f"{summary}; {' và '.join(problems)}, nhưng người đã chấp nhận cho commit này:"
+            f" {waiver['human_reason']}",
+            evidence,
+        )
+    return Gate(key, blocked, f"{summary}; {' và '.join(problems)}{note}", evidence)
 
 
 def gate_test_changes(ctx: VerifyContext, base_sha: str) -> list[Gate]:
@@ -878,9 +1014,11 @@ def verify(ctx: VerifyContext) -> VerifyReport:
     if not (ctx.candidate / ctx.manifest.journey).is_file():
         raise ConfigError(f"không thấy journey {ctx.manifest.journey} trên nhánh")
     commands = gate_commands_approved(ctx)
+    metrics_gate = gate_metrics_unchanged(ctx)
     gates: list[Gate] = [
         commands,
         gate_acceptance_unchanged(ctx),
+        *([metrics_gate] if metrics_gate else []),
         *gate_test_changes(ctx, base_sha),
     ]
     if commands.status == "fail":
@@ -896,6 +1034,8 @@ def verify(ctx: VerifyContext) -> VerifyReport:
     ctx.log("Journey trên nhánh (phải pass)")
     gates.append(gate_passes_after(ctx))
     gates.append(gate_no_regression(ctx, base))
+    if not (metrics_gate and metrics_gate.status == "fail"):
+        gates += [gate_metric(ctx, base, m, head_sha) for m in ctx.manifest.metrics]
     for name in ("typecheck", "lint"):
         gate = gate_static(ctx, base, name)
         if gate:

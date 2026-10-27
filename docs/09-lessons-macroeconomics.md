@@ -2,7 +2,7 @@
 
 > **Bối cảnh:** lần chạy thật đầu tiên của luồng A ([05-starting-points.md](05-starting-points.md) mục 4) trên một repo dựng từ đầu: [macroeconomics](https://github.com/ThangLuuQuoc/macroeconomics), ứng dụng vĩ mô Việt Nam (FastAPI + Postgres + Next.js), một người dùng. Bốn tính năng đi hết spec → duyệt → làm → `proofline verify`: bảng tổng quan, thẻ thị trường, giả lập kịch bản, kiểm chứng lịch sử (2026-10-27).
 >
-> **Trạng thái:** chế độ nhẹ (mục 5) và duyệt chỉ từ người (mục 6) đã có code; gate chỉ số nghiệp vụ (mục 3) và người viết journey độc lập (mục 4) còn là **thiết kế**.
+> **Trạng thái:** gate chỉ số nghiệp vụ (mục 3), chế độ nhẹ (mục 5) và duyệt chỉ từ người (mục 6) đã có code; người viết journey độc lập (mục 4) còn là **thiết kế**.
 
 ---
 
@@ -26,40 +26,45 @@
 
 ---
 
-## 3. Gate chỉ số nghiệp vụ (`business_metric`)
+## 3. Gate chỉ số nghiệp vụ (`business_metric`) — đã làm
 
-**Mục tiêu:** spec khai báo được một thước đo "có ích" mà người duyệt cùng journey, và verify chạy nó như mọi gate khác.
+**Mục tiêu:** spec khai báo được một thước đo "có ích" mà người duyệt cùng journey, và verify chạy nó như mọi gate khác. Code: `src/proofline/metrics.py`, `gate_metric` và `gate_metrics_unchanged` trong `verify.py`.
 
 ### 3.1. Khai báo trong spec
 
 ```yaml
 # .proofline/specs/multi-shock-model.yaml
+kind: model                                              # bắt buộc có ít nhất một metric
 metrics:
   - name: mae_ratio_exports
-    command: uv run python -m macro.backtest --json      # in JSON ra stdout
-    value: outcomes["vn.exports_yoy"].ratio              # đường dẫn tới số
-    kind: fixture | live
-    threshold: { max: 0.8 }                              # ngưỡng tuyệt đối
-    vs_base: { not_worse_by: 0.02 }                      # không xấu hơn base quá mức này
-    blocking: true
+    command: uv run python -m macro.measure --out {out}  # ghi JSON ra file {out} (Proofline cấp)
+    value: by_series["vn.exports"].ratio                 # đường dẫn tới số: .key, ["key"], [0]
+    kind: live                                           # fixture (mặc định) | live
+    threshold: { max: 0.8 }                              # max → thấp hơn là tốt; min → cao hơn là tốt
+    vs_base: { not_worse_by: 0.02 }                      # mặc định 0: không được xấu hơn base
+    blocking: true                                       # mặc định: fixture chặn, live chỉ báo cáo
+    files: [backend/macro/backtest.py, backend/macro/measure.py]   # code tính chỉ số, bị khoá
 ```
 
+- **Ghi ra file, không đọc stdout:** lệnh chạy chỉ giữ phần cuối output, và lệnh đo hay in log.
 - **Hai loại dữ liệu:**
-  - `fixture`: dữ liệu tổng hợp hoặc ảnh chụp cố định trong repo, kết quả xác định. Đây là loại chặn mặc định.
-  - `live`: dữ liệu thật, thay đổi theo thời gian. Chạy base và nhánh trên **cùng một ảnh chụp dữ liệu** (cùng lần ingest), ghi mã ảnh chụp vào báo cáo. Mặc định chỉ báo cáo; chặn khi spec ghi `blocking: true`.
-- **Người duyệt metric cùng journey.** Blob của file khai báo và của lệnh đo được ghi vào `journey_approvals`; agent đổi ngưỡng hay đổi cách tính là vi phạm, giống `acceptance_unchanged`.
+  - `fixture`: dữ liệu tổng hợp hoặc ảnh chụp cố định trong repo, kết quả xác định. Chặn mặc định.
+  - `live`: dữ liệu thật. Nếu JSON có `data_snapshot` (vd `fetch_run:12`) mà base và nhánh khác nhau thì gate `unknown`: không so hai lần đo trên hai bộ dữ liệu. Mặc định chỉ báo cáo; chặn khi ghi `blocking: true`.
+- **Người duyệt metric cùng journey.** Lúc duyệt, dấu vân tay của định nghĩa metric và blob của các file trong `files` được ghi vào bản duyệt và vào quyết định của người (`approved <spec> <blob> metrics <fp>`). Gate `metrics_unchanged` so lại; đổi ngưỡng hay đổi code tính → `fail`, chỉ ra file nào đổi, và **không đo**.
+- **Hệ quả:** code tính chỉ số phải có (và được duyệt) **trước** task dùng nó. Muốn đổi cách đo là một task riêng, người duyệt lại.
 
 ### 3.2. Cách gate chạy
 
-1. Chạy `command` trên base và trên nhánh; đọc `value`.
-2. Pass khi giá trị của nhánh đạt `threshold` **và** không xấu hơn base quá `vs_base`. Base chưa có tính năng (lệnh đo lỗi trên base) thì chỉ xét `threshold`.
-3. Báo cáo ghi giá trị base, nhánh, ngưỡng, mã ảnh chụp dữ liệu; mỗi giá trị thành một fact `metric.<name>@<commit>` trong kho tri thức ([08-domain-knowledge.md](08-domain-knowledge.md)) để thấy xu hướng qua các lần đổi.
-4. Không đạt mà người vẫn muốn ship (vd ra mắt dưới nhãn "thử nghiệm") → quyết định `metric_waiver`, mức trần L1, bắt buộc có lý do. Không bao giờ tự động.
+1. Chạy `command` trên nhánh rồi trên base; đọc `value` (gate `metric_<tên>`, sau `no_regression`).
+2. Pass khi giá trị của nhánh đạt `threshold` **và** không xấu hơn base quá `vs_base`. Lệnh đo lỗi trên base (base chưa có) thì chỉ xét `threshold`. Không đo được trên nhánh → như không đạt.
+3. Báo cáo ghi giá trị nhánh, base, ngưỡng, `data_snapshot`. **Chưa làm:** ghi thành fact `metric.<name>@<commit>` trong kho tri thức.
+4. Không đạt mà người vẫn muốn ship (vd ra mắt dưới nhãn "thử nghiệm"): `proofline spec waive-metric <manifest> <tên> --reason "..."` (chỉ trong terminal, gõ lại mã commit) ghi quyết định `metric_waiver` **cho đúng commit hiện tại**; commit mới cần chấp nhận lại. Không bao giờ tự động.
 
 ### 3.3. Khi nào bắt buộc
 
-- Spec khai báo `kind: model` (dự báo, xếp hạng, gợi ý, chấm điểm) **phải** có ít nhất một metric; thiếu thì `proofline spec approve` từ chối.
-- Tính năng khác: không bắt buộc, gate ghi `not_applicable`.
+- Spec khai báo `kind: model` (dự báo, xếp hạng, gợi ý, chấm điểm) **phải** có ít nhất một metric; thiếu thì duyệt bị từ chối (CLI và ACP).
+- Tính năng khác: không bắt buộc, không có gate chỉ số.
+- `chore` chưa đo chỉ số (xem mục 5).
 
 **Với macroeconomics:** nếu có gate này, giả lập kịch bản v1 đã bị chặn trên dữ liệu thật, và việc ra mắt nó như một bản thử nghiệm sẽ là một quyết định `metric_waiver` có ghi lại, thay vì phát hiện sau khi đã merge. Mô hình nhiều cú sốc sẽ là spec đầu tiên dùng gate này.
 

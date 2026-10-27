@@ -271,6 +271,8 @@ autonomy:
     spec_approval:          { current: "L1", max: "L1", min_readiness: null }   # Luôn do người
     architecture_choice:    { current: "L1", max: "L1", min_readiness: null }   # Luôn do người
     acceptance_approval:    { current: "L1", max: "L1", min_readiness: null }   # Luôn do người
+    commands_approval:      { current: "L1", max: "L1", min_readiness: null }   # Lệnh kiểm tra của verify: luôn do người
+    metric_waiver:          { current: "L1", max: "L1", min_readiness: null }   # Ship dù chỉ số không đạt: luôn do người
     triage_accept:          { current: "L1", max: "L4", min_readiness: "R2" }
     issue_clarify_comment:  { current: "L1", max: "L3", min_readiness: "R2" }
     retry_or_abort:         { current: "L2", max: "L4", min_readiness: "R1" }

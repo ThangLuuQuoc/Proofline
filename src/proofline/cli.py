@@ -28,14 +28,17 @@ from proofline.verify import (
     approval_choice,
     approve_commands,
     blob_of,
+    check_metrics_declared,
     chore_manifest,
     command_snapshot,
     git,
     load_manifest,
+    metric_lock,
     repo_root,
     save_manifest,
     snapshot_fingerprint,
     verify,
+    waiver_choice,
     write_report,
 )
 from proofline.workspace import WorkspaceExistsError, init_workspace
@@ -479,14 +482,23 @@ def spec_approve(
         manifest = load_manifest(spec)
         candidate = repo_root(path or spec.parent)
         blob = blob_of(candidate, manifest.journey)
+        check_metrics_declared(manifest)
+        metrics, metric_files = metric_lock(candidate, manifest)
     except ConfigError as exc:
         raise _fail(exc) from exc
-    if manifest.approved_blob == blob and manifest.journey_approvals[-1].decision_id:
-        typer.echo(f"Journey đã được duyệt ở bản này ({blob[:7]}).")
+    last = manifest.journey_approvals[-1] if manifest.journey_approvals else None
+    if last and last.blob == blob and last.decision_id and last.metrics == metrics:
+        typer.echo(f"Journey và chỉ số đã được duyệt ở bản này ({blob[:7]}).")
         return
     typer.echo(f"Spec `{manifest.name}` · journey {manifest.journey} @ {blob[:7]}")
+    for m in manifest.metrics:
+        files = f" · code: {', '.join(m.files)}" if m.files else ""
+        typer.echo(
+            f"  chỉ số {m.name} ({m.kind}{', chặn' if m.is_blocking else ''}):"
+            f" {m.value} {m.threshold_text()}{files}"
+        )
     try:
-        _confirm_by_human(blob[:7], f"journey {manifest.journey}")
+        _confirm_by_human(blob[:7], f"journey {manifest.journey} và các chỉ số")
     except ConfigError as exc:
         raise _fail(exc) from exc
     from datetime import UTC, datetime
@@ -495,7 +507,7 @@ def spec_approve(
         cfg.workspace / cfg.factory.state_db,
         "acceptance_approval",
         decided_by="human",
-        human_choice=approval_choice(manifest.name, blob),
+        human_choice=approval_choice(manifest.name, blob, metrics),
         human_reason=" ".join(filter(None, [note, "[terminal]"])),
     )
     manifest.journey_approvals.append(
@@ -505,10 +517,45 @@ def spec_approve(
             note=note,
             decision_id=decision_id,
             via="terminal",
+            metrics=metrics,
+            metric_files=metric_files,
         )
     )
     save_manifest(spec, manifest)
     typer.secho(f"Đã duyệt journey {manifest.journey} ({blob[:7]}).", fg=typer.colors.GREEN)
+
+
+@spec_app.command("waive-metric")
+def spec_waive_metric(
+    spec: SpecArgument,
+    metric: Annotated[str, typer.Argument(help="Tên chỉ số không đạt.")],
+    reason: Annotated[str, typer.Option(help="Vì sao vẫn chấp nhận (bắt buộc).")],
+    path: PathOption = None,
+    config: ConfigOption = None,
+) -> None:
+    """Người chấp nhận ship dù một chỉ số không đạt, chỉ cho commit hiện tại của nhánh
+    (chỉ trong terminal tương tác). Không bao giờ tự động."""
+    cfg = _load(config)
+    try:
+        manifest = load_manifest(spec)
+        candidate = repo_root(path or spec.parent)
+        if metric not in {m.name for m in manifest.metrics}:
+            raise ConfigError(f"spec {manifest.name} không có chỉ số {metric}")
+        if not reason.strip():
+            raise ConfigError("cần lý do")
+        head = git(["rev-parse", "HEAD"], candidate)
+        typer.echo(f"Chấp nhận {metric} không đạt cho {manifest.name} @ {head[:7]}: {reason}")
+        _confirm_by_human(head[:7], f"ngoại lệ cho chỉ số {metric}")
+    except ConfigError as exc:
+        raise _fail(exc) from exc
+    record_decision(
+        cfg.workspace / cfg.factory.state_db,
+        "metric_waiver",
+        decided_by="human",
+        human_choice=waiver_choice(manifest.name, metric, head),
+        human_reason=f"{reason} [terminal]",
+    )
+    typer.secho(f"Đã ghi ngoại lệ cho {metric} @ {head[:7]}.", fg=typer.colors.GREEN)
 
 
 @target_app.command("approve-commands")

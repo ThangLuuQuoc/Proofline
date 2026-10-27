@@ -201,3 +201,12 @@ def test_cli_needs_a_spec_or_chore(chore_repo):
     result = CliRunner().invoke(app, ["verify", "--config", str(config)])
     assert result.exit_code == 2
     assert "--chore" in result.output
+
+
+def test_vietnamese_text_in_the_diff_is_read_as_utf8(chore_repo):
+    """git output was decoded with the Windows code page and broke on Vietnamese text."""
+    repo, config = chore_repo
+    write(repo / "calc.py", CALC + '\n\nLABEL = "Tổng hai số: ước lượng, kiểm chứng"\n')
+    commit(repo, "nhãn tiếng Việt")
+    _, gates = run_chore(repo, config)
+    assert gates["chore_scope"].status == "pass", gates["chore_scope"].detail

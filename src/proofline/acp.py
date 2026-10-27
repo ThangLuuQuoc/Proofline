@@ -38,9 +38,11 @@ from proofline.verify import (
     approval_choice,
     approve_commands,
     blob_of,
+    check_metrics_declared,
     command_snapshot,
     git,
     load_manifest,
+    metric_lock,
     save_manifest,
     snapshot_fingerprint,
     verify,
@@ -584,6 +586,14 @@ class AcpServer:
         except ConfigError:
             return None
 
+    def _metrics_missing(self, session: Session, manifest: SpecManifest) -> bool:
+        try:
+            check_metrics_declared(manifest)
+        except ConfigError as exc:
+            self.say(session.session_id, f"❌ {exc}")
+            return True
+        return False
+
     def _approve(
         self,
         session: Session,
@@ -593,11 +603,12 @@ class AcpServer:
         note: str,
         channel: str,
     ) -> str:
+        metrics, metric_files = metric_lock(session.cwd, manifest)
         decision_id = record_decision(
             self.db_path,
             "acceptance_approval",
             decided_by="human",
-            human_choice=approval_choice(manifest.name, blob),
+            human_choice=approval_choice(manifest.name, blob, metrics),
             human_reason=" ".join(filter(None, [note, f"[{channel}]"])),
         )
         manifest.journey_approvals.append(
@@ -607,6 +618,8 @@ class AcpServer:
                 note=note or f"qua ACP ({channel})",
                 decision_id=decision_id,
                 via="acp",
+                metrics=metrics,
+                metric_files=metric_files,
             )
         )
         save_manifest(path, manifest)
@@ -634,6 +647,8 @@ class AcpServer:
             return
         path, manifest, _ = picked
         sid = session.session_id
+        if self._metrics_missing(session, manifest):
+            return
         blob = self._journey_blob(session, manifest)
         history = ", ".join(
             f"{a.blob[:7]} ({a.approved_at[:10]})" for a in manifest.journey_approvals
@@ -708,6 +723,8 @@ class AcpServer:
         if picked is None:
             return
         path, manifest, note = picked
+        if self._metrics_missing(session, manifest):
+            return
         blob = self._journey_blob(session, manifest)
         if blob is None:
             self.say(session.session_id, f"❌ Không thấy file journey `{manifest.journey}`.")

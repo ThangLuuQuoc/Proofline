@@ -126,6 +126,8 @@ def resolve(repo_path: Path, ref: str) -> str | None:
         cwd=repo_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
@@ -444,6 +446,8 @@ def checkout_scope(repo_path: Path) -> Scope | None:
         cwd=repo_path,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     ref = out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else commit
