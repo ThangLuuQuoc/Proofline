@@ -10,7 +10,7 @@ không còn thì sự thật bị **rút** kèm lý do. Không ghi gì vào repo
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -305,6 +305,22 @@ def accumulate_base_tests(facts: FactsFile, report: VerifyReport) -> dict[str, A
         combined = {"measurements": 1, **new}
     facts.observations[key] = {"commit": report.base_sha, **combined}
     return combined
+
+
+def base_test_cache(
+    config: ProoflineConfig, repo: str
+) -> Callable[[str, str], dict[str, Any] | None]:
+    """Kết quả test của base đã cộng dồn, chỉ khi đo trên đúng commit được hỏi (cho chore)."""
+    observations = load_facts(config, repo).observations
+
+    def lookup(ref: str, commit: str) -> dict[str, Any] | None:
+        seen = observations.get(f"verify.tests@{ref}")
+        if not seen or seen.get("commit") != commit:
+            return None
+        # One run cannot tell an unstable test from a stable one.
+        return dict(seen) if len(seen.get("failed_per_run", [])) >= 2 else None
+
+    return lookup
 
 
 def measurements_from_verify(

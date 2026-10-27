@@ -201,6 +201,9 @@ verification:
   forbid_test_skip_patterns: ["@pytest.mark.skip", "@pytest.mark.xfail", "it.skip", "describe.skip", "xit("]
   baseline_from_base_commit: true       # Loại test vốn đã đỏ/chập chờn trên base khỏi regression
   allowed_new_static_warnings: 0        # Tính theo delta so với base, không đòi tuyệt đối 0
+  chore:                                # proofline verify --chore: việc nhẹ, không spec/journey (docs/09 mục 5)
+    max_diff_lines: 60                  # Dòng thêm + xoá ở file không phải tài liệu
+    extra_entry_point_patterns: []      # Regex thêm cho 'lối vào mới' (route, lệnh CLI) của repo
   user_journey:                         # Kiểm chứng như người dùng thật
     # Thư mục kịch bản khai báo theo từng repo (target_repos[].journeys_dir); kịch bản được giữ lại làm test E2E hồi quy
     must_fail_on_base: true             # Phải fail ở bước khẳng định mục tiêu trên base_commit

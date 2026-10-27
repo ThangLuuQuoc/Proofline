@@ -26,6 +26,7 @@ from proofline.verify import (
     JourneyApproval,
     VerifyContext,
     blob_of,
+    chore_manifest,
     git,
     load_manifest,
     repo_root,
@@ -484,12 +485,30 @@ def spec_approve(
 
 @app.command("verify")
 def verify_cmd(
-    spec: SpecArgument,
+    spec: Annotated[
+        Path | None,
+        typer.Argument(help="Manifest của spec, vd .proofline/specs/<tên>.yaml (trừ --chore)."),
+    ] = None,
+    chore: Annotated[
+        bool,
+        typer.Option(
+            "--chore",
+            help="Chế độ nhẹ (docs/09 mục 5): thay đổi nhỏ, không spec/journey; đi từ --path.",
+        ),
+    ] = False,
+    base: Annotated[
+        str | None, typer.Option(help="Nhánh base cho --chore (mặc định: default_branch).")
+    ] = None,
     path: PathOption = None,
     repo: Annotated[
         str | None, typer.Option(help="Tên repo đích (mặc định: tự nhận theo kho git).")
     ] = None,
-    runs: Annotated[int, typer.Option(min=1, max=5, help="Số lượt chạy cả bộ test mỗi bên.")] = 2,
+    runs: Annotated[
+        int | None,
+        typer.Option(
+            min=1, max=5, help="Số lượt chạy test mỗi bên (mặc định 2; chore dùng lại base: 1)."
+        ),
+    ] = None,
     install: Annotated[
         bool, typer.Option("--install/--no-install", help="Chạy commands.install trước.")
     ] = True,
@@ -497,10 +516,21 @@ def verify_cmd(
 ) -> None:
     """Chạy các gate của một task trên nhánh, so với base; ghi báo cáo vào thư mục artifacts."""
     cfg = _load(config)
+    if (spec is None) == (not chore):
+        raise _fail(ConfigError("cần đúng một trong hai: file manifest của spec, hoặc --chore"))
     try:
-        manifest = load_manifest(spec)
-        candidate = repo_root(path or spec.parent)
+        candidate = repo_root(path or (spec.parent if spec else Path.cwd()))
         target = _target_for(cfg, candidate, repo)
+        if spec is not None:
+            manifest = load_manifest(spec)
+        else:
+            manifest = chore_manifest(candidate, base or target.default_branch)
+        cache = knowledge.base_test_cache(cfg, target.name)
+        if runs is None:
+            reuse = manifest.task_type == "chore" and cache(
+                manifest.base, git(["rev-parse", f"{manifest.base}^{{commit}}"], candidate)
+            )
+            runs = 1 if reuse else 2
         ctx = VerifyContext(
             config=cfg,
             target=target,
@@ -509,6 +539,7 @@ def verify_cmd(
             runs=runs,
             install=install,
             log=lambda msg: typer.echo(f"· {msg}"),
+            base_cache=cache,
         )
         report = verify(ctx)
     except ConfigError as exc:

@@ -10,6 +10,11 @@ Gate (docs/04-execution-plan.md Phase 2, docs/05-starting-points.md mục 7):
   vài lượt là "không ổn định" (không kết luận); fail cả trên base là có sẵn.
 - static_<lệnh>: typecheck/lint không xấu hơn base; công cụ hỏng sẵn thì "không đo được".
 
+Task `chore` (chế độ nhẹ, docs/09-lessons-macroeconomics.md mục 5): không spec, không journey.
+chore_scope kiểm bằng diff rằng thay đổi đủ nhỏ, không thêm lối vào mới cho người dùng và không
+chạm vùng nhạy cảm; rồi test_integrity, no_regression, static_*. Kết quả test của base đã đo trên
+cùng commit (kho tri thức, docs/08) được dùng lại thay vì chạy lại base.
+
 Base chạy trên bản clone riêng trong workspace (không thêm worktree vào .git của người dùng).
 """
 
@@ -22,8 +27,9 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from fnmatch import fnmatchcase
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, Field, ValidationError
@@ -54,6 +60,28 @@ TOOL_BROKEN = re.compile(
 DIAGNOSTIC = re.compile(
     r"error TS\d+|\b(error|warning)\b|✖ \d+ problem|Found \d+ error", re.IGNORECASE
 )
+DEFAULT_CHORE_MAX_DIFF_LINES = 60
+# Tài liệu và báo cáo verify của chính Proofline: không tính vào giới hạn dòng code của chore.
+DOC_PATH = re.compile(r"\.(md|rst|txt|adoc)$|(^|/)docs?/|(^|/)\.proofline/verify/", re.IGNORECASE)
+# Vùng nhạy cảm khi config không khai báo review.risk_score.sensitive_paths.
+DEFAULT_SENSITIVE_PATHS = [
+    "**/auth/**",
+    "**/payment*/**",
+    "**/migrations/**",
+    "**/.github/workflows/**",
+]
+# Manifest spec giữ bản duyệt của người: chore không bao giờ được chạm.
+ALWAYS_SENSITIVE_PATHS = [".proofline/specs/**"]
+# Lối vào mới cho người dùng: route HTTP, lệnh CLI (theo dòng thêm vào), trang/route (theo file).
+ENTRY_POINT_LINE = [
+    r"@\w+\.(get|post|put|patch|delete|route|api_route|websocket|command)\(",
+    r"@click\.(command|group)\b",
+    r"\badd_typer\(",
+    r"\b(app|router)\.(get|post|put|patch|delete|all)\(\s*['\"`]",
+]
+ENTRY_POINT_FILE = re.compile(
+    r"(^|/)app/(.+/)?(page|route)\.[cm]?[jt]sx?$|(^|/)pages/(.+/)?[^/]+\.[cm]?[jt]sx?$"
+)
 
 
 # ---- Manifest --------------------------------------------------------------------------
@@ -69,10 +97,10 @@ class SpecManifest(BaseModel):
     """`.proofline/specs/<tên>.yaml`: phần máy đọc được của một spec."""
 
     name: str
-    task_type: Literal["feature", "bug"] = "feature"
+    task_type: Literal["feature", "bug", "chore"] = "feature"
     spec: str | None = None
     base: str
-    journey: str
+    journey: str = ""  # chore: không có journey
     journey_approvals: list[JourneyApproval] = Field(default_factory=list)
 
     @property
@@ -134,6 +162,7 @@ class VerifyReport:
     gates: list[Gate]
     verified_at: str
     installed: bool = False  # commands.install đã chạy trên cả hai bên
+    task_type: str = "feature"
 
     @property
     def status(self) -> Status:
@@ -143,13 +172,19 @@ class VerifyReport:
             return "unknown"
         return "pass"
 
+    def _runs_text(self) -> str:
+        if any("base_cached" in g.evidence for g in self.gates):
+            return f"nhánh {self.runs} lượt, base dùng lại số đo trước"
+        return f"{self.runs} lượt mỗi bên"
+
     def to_markdown(self) -> str:
         mark = {"pass": "✅", "fail": "❌", "unknown": "⚠️"}
         lines = [
-            f"## Proofline verify: {self.spec}",
+            f"## Proofline verify: {self.spec}"
+            + (f" ({self.task_type})" if self.task_type == "chore" else ""),
             "",
             f"Base `{self.base_ref}` @ `{self.base_sha[:7]}` · nhánh @ `{self.head_sha[:7]}`"
-            f" · {self.runs} lượt mỗi bên · {self.verified_at}",
+            f" · {self._runs_text()} · {self.verified_at}",
             "",
             "| Gate | Kết quả | Chi tiết |",
             "| :--- | :--- | :--- |",
@@ -163,6 +198,8 @@ class VerifyReport:
 # ---- Ngữ cảnh --------------------------------------------------------------------------
 
 Runner = Callable[[str, Path, float], CommandResult]
+# (ref, commit) -> kết quả test của base đã đo trên đúng commit đó (kho tri thức), hoặc None.
+BaseCache = Callable[[str, str], dict[str, Any] | None]
 
 
 @dataclass
@@ -177,6 +214,7 @@ class VerifyContext:
     log: Callable[[str], None] = lambda _msg: None
     # Lần chạy lại journey trên base khi nó fail không ở khẳng định (None: theo config).
     journey_retries: int | None = None
+    base_cache: BaseCache = lambda _ref, _sha: None
 
     @property
     def base_journey_retries(self) -> int:
@@ -196,6 +234,16 @@ class VerifyContext:
             self.config.extra_value("verification", "forbid_test_skip_patterns", default=None)
             or DEFAULT_SKIP_PATTERNS
         )
+
+    def chore_value(self, key: str, default: Any) -> Any:
+        value = self.config.extra_value("verification", "chore", key, default=None)
+        return default if value is None else value
+
+    def sensitive_paths(self) -> list[str]:
+        configured = self.config.extra_value(
+            "review", "risk_score", "sensitive_paths", default=None
+        )
+        return [*ALWAYS_SENSITIVE_PATHS, *(configured or DEFAULT_SENSITIVE_PATHS)]
 
 
 def _quote(path: Path | str) -> str:
@@ -331,6 +379,75 @@ def gate_test_changes(ctx: VerifyContext, base_sha: str) -> list[Gate]:
     return gates
 
 
+def _matches(path: str, pattern: str) -> bool:
+    """Glob kiểu `**/auth/**`: `**/` ở đầu cũng khớp ở gốc repo."""
+    return fnmatchcase(path, pattern) or (
+        pattern.startswith("**/") and fnmatchcase(path, pattern[3:])
+    )
+
+
+def gate_chore_scope(ctx: VerifyContext, base_sha: str) -> Gate:
+    """Thay đổi có đúng là việc nhẹ không, đo bằng diff (agent không tự khai được)."""
+    numstat = git(["diff", "--numstat", "--no-renames", base_sha], ctx.candidate).splitlines()
+    status = git(["diff", "--name-status", "--no-renames", base_sha], ctx.candidate).splitlines()
+    lines: dict[str, int] = {}
+    for row in numstat:
+        added, deleted, path = row.split("\t", 2)
+        lines[path.replace("\\", "/")] = sum(int(n) for n in (added, deleted) if n.isdigit())
+    if not lines:
+        return Gate("chore_scope", "fail", "không có thay đổi nào so với base")
+    new_files = {
+        r.split("\t")[-1].replace("\\", "/") for r in status if "\t" in r and r.startswith("A")
+    }
+    code = {p: n for p, n in lines.items() if not DOC_PATH.search(p)}
+    code_lines = sum(code.values())
+    limit = int(ctx.chore_value("max_diff_lines", DEFAULT_CHORE_MAX_DIFF_LINES))
+
+    reasons: list[str] = []
+    sensitive = sorted(p for p in lines if any(_matches(p, g) for g in ctx.sensitive_paths()))
+    if sensitive:
+        reasons.append(f"chạm vùng nhạy cảm: {', '.join(sensitive)}")
+    if code_lines > limit:
+        reasons.append(f"{code_lines} dòng code thay đổi, quá {limit}")
+    entry = sorted(p for p in new_files if ENTRY_POINT_FILE.search(p) and not TEST_PATH.search(p))
+    patterns = [*ENTRY_POINT_LINE, *ctx.chore_value("extra_entry_point_patterns", [])]
+    line_re = re.compile("|".join(f"(?:{p})" for p in patterns))
+    product = [p for p in code if not TEST_PATH.search(p)]
+    if product:
+        current = ""
+        for line in git(["diff", base_sha, "--", *product], ctx.candidate).splitlines():
+            if line.startswith("+++ b/"):
+                current = line[6:]
+            elif line.startswith("+") and not line.startswith("+++") and line_re.search(line):
+                entry.append(f"{current}: {line[1:].strip()[:60]}")
+    if entry:
+        reasons.append(f"thêm lối vào mới cho người dùng: {'; '.join(entry[:3])}")
+
+    evidence = {
+        "files": len(lines),
+        "code_lines": code_lines,
+        "limit": limit,
+        "sensitive": sensitive,
+        "entry_points": entry,
+    }
+    if reasons:
+        return Gate(
+            "chore_scope",
+            "fail",
+            f"không phải việc nhẹ: {' · '.join(reasons)}; chuyển sang task bug hoặc feature"
+            " (cần spec)",
+            evidence,
+        )
+    docs_only = " (chỉ tài liệu)" if not code else ""
+    return Gate(
+        "chore_scope",
+        "pass",
+        f"{len(lines)} file, {code_lines}/{limit} dòng code{docs_only}; không thêm lối vào mới,"
+        " không chạm vùng nhạy cảm",
+        evidence,
+    )
+
+
 def _journey_on_base(ctx: VerifyContext, base: Path, label: str):
     journey = ctx.manifest.journey
     target = base / journey
@@ -440,10 +557,20 @@ def gate_passes_after(ctx: VerifyContext) -> Gate:
 def classify_regressions(
     base_runs: list[TestRun], head_runs: list[TestRun]
 ) -> dict[str, list[str]]:
-    base_failed = frozenset().union(*(r.failed_ids for r in base_runs))
-    base_ids = frozenset().union(*(r.ids for r in base_runs))
+    return classify_failures(
+        frozenset().union(*(r.failed_ids for r in base_runs)),
+        frozenset().union(*(r.ids for r in base_runs)),
+        head_runs,
+    )
+
+
+def classify_failures(
+    base_failed: frozenset[str], base_ids: frozenset[str] | None, head_runs: list[TestRun]
+) -> dict[str, list[str]]:
+    """`base_ids=None`: không biết test nào là mới (base lấy từ kho tri thức), nên test mới fail
+    được tính như mọi test khác."""
     head_ids = frozenset().union(*(r.ids for r in head_runs))
-    new_tests = head_ids - base_ids
+    new_tests = head_ids - base_ids if base_ids is not None else frozenset()
     always = (
         frozenset.intersection(*(r.failed_ids for r in head_runs)) if head_runs else frozenset()
     )
@@ -458,11 +585,24 @@ def classify_regressions(
     }
 
 
-def gate_no_regression(ctx: VerifyContext, base: Path) -> Gate:
+BaseCheckout = Path | Callable[[], Path]
+
+
+def _checkout(base: BaseCheckout) -> Path:
+    return base() if callable(base) else base
+
+
+def gate_no_regression(
+    ctx: VerifyContext, base: BaseCheckout, cached: dict[str, Any] | None = None
+) -> Gate:
+    """`cached`: kết quả test của base đã đo trên cùng commit; có thì chỉ chạy nhánh."""
     base_runs: list[TestRun] = []
     head_runs: list[TestRun] = []
+    sides: list[tuple[str, Path, list[TestRun]]] = [("head", ctx.candidate, head_runs)]
+    if cached is None:
+        sides.insert(0, ("base", _checkout(base), base_runs))
     for i in range(1, ctx.runs + 1):
-        for side, cwd, bucket in (("base", base, base_runs), ("head", ctx.candidate, head_runs)):
+        for side, cwd, bucket in sides:
             ctx.log(f"Cả bộ test, lượt {i}/{ctx.runs} ({side})")
             run, result = run_tests(ctx, cwd, f"suite-{side}-{i}")
             if run is None:
@@ -473,17 +613,32 @@ def gate_no_regression(ctx: VerifyContext, base: Path) -> Gate:
                     f" {result.output_tail.strip()[-200:]}",
                 )
             bucket.append(run)
-    groups: dict = classify_regressions(base_runs, head_runs)
-    # What the base itself does, for the knowledge library (docs/08): always vs sometimes failing.
-    base_always = frozenset.intersection(*(r.failed_ids for r in base_runs))
-    base_some = frozenset().union(*(r.failed_ids for r in base_runs))
-    groups["base"] = {
-        "failed_per_run": [len(r.failed_ids) for r in base_runs],
-        "always_failing": sorted(base_always),
-        "unstable": sorted(base_some - base_always),
-    }
+    groups: dict
+    if cached is None:
+        groups = classify_regressions(base_runs, head_runs)
+        # What the base itself does, for the knowledge library (docs/08): always vs sometimes.
+        base_always = frozenset.intersection(*(r.failed_ids for r in base_runs))
+        base_some = frozenset().union(*(r.failed_ids for r in base_runs))
+        groups["base"] = {
+            "failed_per_run": [len(r.failed_ids) for r in base_runs],
+            "always_failing": sorted(base_always),
+            "unstable": sorted(base_some - base_always),
+        }
+        base_counts = ", ".join(str(len(r.failed_ids)) for r in base_runs)
+    else:
+        # No "base" key: the knowledge library must not count the same measurement twice.
+        known = frozenset(cached["always_failing"]) | frozenset(cached["unstable"])
+        groups = classify_failures(known, None, head_runs)
+        groups["base_cached"] = {
+            "commit": cached.get("commit", ""),
+            "failed_per_run": cached["failed_per_run"],
+        }
+        base_counts = (
+            f"{', '.join(str(n) for n in cached['failed_per_run'])} (đo trước,"
+            f" {len(cached['failed_per_run'])} lượt, không chạy lại)"
+        )
     counts = (
-        f"base: {', '.join(str(len(r.failed_ids)) for r in base_runs)} fail · "
+        f"base: {base_counts} fail · "
         f"nhánh: {', '.join(str(len(r.failed_ids)) for r in head_runs)} fail (theo lượt)"
     )
     if groups["consistent"]:
@@ -526,7 +681,7 @@ def _broken_cause(output: str, checkout: Path) -> str:
     return cause.strip()[:160]
 
 
-def gate_static(ctx: VerifyContext, base: Path, name: str) -> Gate | None:
+def gate_static(ctx: VerifyContext, checkout: BaseCheckout, name: str) -> Gate | None:
     command = ctx.target.commands.get(name)
     if not command:
         return None
@@ -534,6 +689,7 @@ def gate_static(ctx: VerifyContext, base: Path, name: str) -> Gate | None:
     head = ctx.runner(command, ctx.candidate, COMMAND_TIMEOUT)
     if head.ok:
         return Gate(f"static_{name}", "pass", f"'{command}' sạch trên nhánh")
+    base = _checkout(checkout)  # base chỉ cần khi nhánh không sạch
     before = ctx.runner(command, base, COMMAND_TIMEOUT)
     if TOOL_BROKEN.search(head.output_tail) or TOOL_BROKEN.search(before.output_tail):
         both = not before.ok
@@ -572,6 +728,8 @@ def gate_static(ctx: VerifyContext, base: Path, name: str) -> Gate | None:
 
 
 def verify(ctx: VerifyContext) -> VerifyReport:
+    if ctx.manifest.task_type == "chore":
+        return verify_chore(ctx)
     base_sha = git(["rev-parse", f"{ctx.manifest.base}^{{commit}}"], ctx.candidate)
     head_sha = git(["rev-parse", "HEAD"], ctx.candidate)
     if not (ctx.candidate / ctx.manifest.journey).is_file():
@@ -603,6 +761,63 @@ def verify(ctx: VerifyContext) -> VerifyReport:
         gates=gates,
         verified_at=datetime.now(UTC).isoformat(timespec="seconds"),
         installed=ctx.install and bool(ctx.target.commands.get("install")),
+    )
+
+
+def chore_manifest(candidate: Path, base: str) -> SpecManifest:
+    """Manifest tạm cho một chore chạy không cần file spec: tên theo nhánh hiện tại."""
+    branch = git(["rev-parse", "--abbrev-ref", "HEAD"], candidate)
+    if branch == "HEAD":
+        branch = git(["rev-parse", "--short", "HEAD"], candidate)
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", branch).strip("-")
+    return SpecManifest(name=f"chore-{name}", task_type="chore", base=base)
+
+
+def verify_chore(ctx: VerifyContext) -> VerifyReport:
+    """Chế độ nhẹ: không journey; base chỉ được chuẩn bị (clone, cài) khi thật sự cần."""
+    base_sha = git(["rev-parse", f"{ctx.manifest.base}^{{commit}}"], ctx.candidate)
+    head_sha = git(["rev-parse", "HEAD"], ctx.candidate)
+    gates: list[Gate] = [
+        gate_chore_scope(ctx, base_sha),
+        *(g for g in gate_test_changes(ctx, base_sha) if g.key == "test_integrity"),
+    ]
+    installed = False
+    if gates[0].status != "fail":
+        prepared: list[Path] = []
+
+        def base() -> Path:
+            if not prepared:
+                prepared.append(prepare_base(ctx, base_sha))
+                failed = _install(ctx, prepared[0], "base")
+                if failed:
+                    gates.append(failed)
+            return prepared[0]
+
+        failed_install = _install(ctx, ctx.candidate, "head")
+        if failed_install:
+            gates.append(failed_install)
+        cached = ctx.base_cache(ctx.manifest.base, base_sha)
+        if cached and len(cached.get("failed_per_run", [])) < 2:
+            cached = None  # một lượt không phân biệt được test chập chờn
+        if cached:
+            ctx.log(f"Dùng kết quả test đã đo của base @ {base_sha[:7]} (không chạy lại base)")
+        gates.append(gate_no_regression(ctx, base, cached))
+        for name in ("typecheck", "lint"):
+            gate = gate_static(ctx, base, name)
+            if gate:
+                gates.append(gate)
+        installed = bool(prepared) and ctx.install and bool(ctx.target.commands.get("install"))
+    return VerifyReport(
+        spec=ctx.manifest.name,
+        repo=ctx.target.name,
+        base_ref=ctx.manifest.base,
+        base_sha=base_sha,
+        head_sha=head_sha,
+        runs=ctx.runs,
+        gates=gates,
+        verified_at=datetime.now(UTC).isoformat(timespec="seconds"),
+        installed=installed,
+        task_type="chore",
     )
 
 

@@ -208,7 +208,7 @@ Harness tự chạy lại mọi kiểm tra trong container sạch, không tin b�
 | `ci_setup` | `ci_green_on_branch` | CI mới chạy xanh trên nhánh của PR |
 | `feature` (dự kiến) | `business_metric` | Chỉ số nghiệp vụ người đã duyệt trong spec đạt ngưỡng và không xấu hơn base ([09-lessons-macroeconomics.md](09-lessons-macroeconomics.md) mục 3) |
 | `feature` (dự kiến) | `acceptance_independent` | Journey do vai trò khác worker viết, chỉ từ spec (mục 4 của doc 09) |
-| `chore` (dự kiến) | `test_integrity`, `no_regression`, `static_*` | Thay đổi nhỏ không đổi hành vi người dùng, không cần spec/journey; điều kiện do code kiểm (mục 5 của doc 09) |
+| `chore` | `chore_scope`, `test_integrity`, `no_regression`, `static_*` | Thay đổi nhỏ không đổi hành vi người dùng, không cần spec/journey; `chore_scope` đo diff (số dòng code, vùng nhạy cảm, lối vào mới). `proofline verify --chore` (mục 5 của doc 09) |
 
 Với `feature`, tiêu chí thành công được viết trước và do người duyệt, nên mạnh hơn kịch bản agent tự viết cho bug.
 

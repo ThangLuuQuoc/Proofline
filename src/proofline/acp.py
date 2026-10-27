@@ -830,6 +830,7 @@ class AcpServer:
             runs=runs,
             install=install,
             log=log,
+            base_cache=knowledge.base_test_cache(self.config, target.name),
         )
         try:
             report = verify(ctx)

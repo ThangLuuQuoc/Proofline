@@ -457,6 +457,7 @@ Gate kiểm chứng **code**; lớp này kiểm chứng **quyết định**. Ngu
 - [ ] Viết `proofline doctor` / `proofline interview` và chạy shadow mode trên 3 issue.
 - [x] Thiết kế tích hợp qua ACP với PandaCode (`docs/07-acp-pandacode.md`).
 - [x] `proofline verify` (gate runner) + `proofline spec approve`: tự động hóa các gate đã làm tay ở lần chạy thử đầu tiên; regression so danh sách test fail qua nhiều lượt; baseline trên bản clone riêng.
+- [x] `proofline verify --chore`: chế độ nhẹ, gate `chore_scope` đo diff, dùng lại kết quả test của base từ kho tri thức (docs/09 mục 5).
 - [x] `proofline acp`: khung giao thức + luồng chỉ đọc `/assess`, `/status` (bước 1–2 của kế hoạch thử trong docs/07; đã kiểm bằng client giả lập, chưa chạy trong PandaCode).
 - [x] `proofline acp` bước 3: duyệt journey qua `/spec` (hai `allow_once`, Decision Guard), `/approve`, `/reject`, `/verify` (đã kiểm bằng client giả lập, chưa chạy trong PandaCode).
 - [x] `proofline acp`: `/init` đăng ký thư mục đang mở làm repo đích (chỉ ghi vào workspace), thư mục trống thì hỏi `git init`, rồi assess. Người dùng bắt đầu từ PandaCode mà không cần CLI.

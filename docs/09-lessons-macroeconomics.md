@@ -2,7 +2,7 @@
 
 > **Bối cảnh:** lần chạy thật đầu tiên của luồng A ([05-starting-points.md](05-starting-points.md) mục 4) trên một repo dựng từ đầu: [macroeconomics](https://github.com/ThangLuuQuoc/macroeconomics), ứng dụng vĩ mô Việt Nam (FastAPI + Postgres + Next.js), một người dùng. Bốn tính năng đi hết spec → duyệt → làm → `proofline verify`: bảng tổng quan, thẻ thị trường, giả lập kịch bản, kiểm chứng lịch sử (2026-10-27).
 >
-> **Trạng thái:** ba thay đổi ở mục 3–5 là **thiết kế**, chưa có code.
+> **Trạng thái:** chế độ nhẹ (mục 5) đã có code; gate chỉ số nghiệp vụ (mục 3) và người viết journey độc lập (mục 4) còn là **thiết kế**.
 
 ---
 
@@ -78,21 +78,28 @@ metrics:
 
 ---
 
-## 5. Chế độ nhẹ (task type `chore`)
+## 5. Chế độ nhẹ (task type `chore`) — đã làm
 
 **Mục tiêu:** thay đổi nhỏ không đổi hành vi người dùng vẫn có bằng chứng, nhưng không cần spec và journey.
 
-- **Điều kiện, do code kiểm (không phải agent tự khai):**
-  - diff ≤ `chore.max_diff_lines` (mặc định 60);
-  - không thêm route, trang, lệnh CLI hay endpoint mới;
-  - không chạm vùng nhạy cảm (auth, migration, CI deploy) và không chạm lệnh đo metric của spec nào;
-  - hoặc chỉ đổi tài liệu, cấu hình lint/CI (CI vẫn phải xanh trên nhánh).
-- **Gate:** `test_integrity`, `no_regression`, `static_*`; metric đã khai báo của repo phải không xấu đi (nếu lệnh đo chạy được nhanh).
-- **Rẻ hơn:** kết quả test trên base lấy lại từ kho tri thức khi cùng commit (đã có ở bước K0), nên thường chỉ chạy nhánh một lượt.
-- **Vượt điều kiện giữa chừng** → verify từ chối với lý do và gợi ý chuyển sang `bug` hoặc `feature` (cần spec).
+```bash
+proofline verify --chore [--base main] [--path <checkout>]   # không cần file spec
+proofline verify .proofline/specs/<tên>.yaml                 # hoặc manifest có task_type: chore
+```
+
+- **Gate `chore_scope`, đo bằng diff so với base (agent không tự khai được).** Không đạt thì verify dừng ngay, không chạy test, và gợi ý chuyển sang `bug` hoặc `feature` (cần spec). Điều kiện:
+  - tổng số dòng thêm + xoá ở file **không phải tài liệu** ≤ `verification.chore.max_diff_lines` (mặc định 60). Tài liệu (`*.md`, `*.rst`, `*.txt`, `docs/`) và báo cáo `.proofline/verify/` không tính, nên đổi chỉ tài liệu thì lớn mấy cũng được;
+  - không chạm vùng nhạy cảm: `review.risk_score.sensitive_paths` (mẫu: auth, payment, migrations, `.github/workflows`), và luôn cả `.proofline/specs/**` (chỗ ghi bản duyệt của người);
+  - không thêm lối vào mới cho người dùng: file trang/route mới (`app/**/page.tsx`, `app/**/route.ts`, `pages/**`) hoặc dòng thêm vào kiểu `@app.get(`, `@router.post(`, `@app.command(`, `@click.command`, `add_typer(`, `app.get('/...')`. Thêm mẫu riêng của repo qua `verification.chore.extra_entry_point_patterns` (regex).
+- **Gate còn lại:** `test_integrity` (không sửa/xoá test cũ, không thêm skip), `no_regression`, `static_*`. Không đòi test mới.
+- **Rẻ hơn:**
+  - base chỉ được clone và cài khi thật sự cần;
+  - kết quả test của base đã đo trên **đúng commit** (kho tri thức, ít nhất 2 lượt) được dùng lại: chỉ chạy nhánh, mặc định 1 lượt. Báo cáo ghi "đo trước, không chạy lại". Khi đó không biết test nào là mới, nên test mới fail bị tính như regression;
+  - lần dùng lại không cộng thêm số đo vào kho tri thức (tránh đếm một lần đo hai lần).
+- **Chưa làm:** điều kiện "không chạm lệnh đo metric" chờ gate `business_metric` (mục 3); CI xanh trên nhánh cho thay đổi workflow (hiện workflow là vùng nhạy cảm nên không đi chore).
 - Không thay đổi quy tắc merge: chế độ nhẹ chỉ bớt thủ tục, không bớt quyền của người.
 
-**Với macroeconomics:** các việc như sửa connector Pink Sheet cho bền hơn, sửa CI, thêm tài liệu giả thuyết thị trường sẽ đi đường này.
+**Với macroeconomics:** các việc như sửa connector Pink Sheet cho bền hơn, thêm tài liệu giả thuyết thị trường sẽ đi đường này. Chạy thử 2026-10-27 trên nhánh lưu các báo cáo verify (6 file, 0 dòng code): lần đầu chạy base và nhánh 2 lượt, cả 5 gate pass; lần hai dùng lại kết quả base đã đo, chỉ chạy nhánh 1 lượt, xong trong khoảng 40 giây.
 
 ---
 
